@@ -82,16 +82,21 @@ function newRequestContext(): RequestContext {
   return { meta: { lastScreen: null } };
 }
 
-export async function startConversation(): Promise<DispatchResult> {
+/**
+ * Create a fresh conversation row. If `id` is provided (the cookie value set by
+ * middleware), the row is created with that exact id so cookie ↔ DB stay in
+ * lockstep. Otherwise nanoid-generated.
+ */
+export async function startConversation(id?: string): Promise<DispatchResult> {
   const ctx = newRequestContext();
   const machine = machineForRequest(ctx);
-  const tempId = "pending";
-  const actor = createActor(machine, { input: { conversationId: tempId } });
+  const seedId = id ?? "pending";
+  const actor = createActor(machine, { input: { conversationId: seedId } });
   actor.start();
   const snapshot = actor.getPersistedSnapshot() as PersistedSnapshot;
   actor.stop();
 
-  const convo = await createConversation(snapshot);
+  const convo = await createConversation(snapshot, id);
 
   const reply = promptForState(snapshot.value as BotSnapshot["value"]);
   await appendMessage({

@@ -27,12 +27,12 @@ function newId(): string {
 
 export async function createConversation(
   snapshot: PersistedSnapshot,
+  id?: string,
 ): Promise<Conversation> {
   const db = getDb();
-  const id = newId();
   const [row] = await db
     .insert(conversations)
-    .values({ id, fsmSnapshot: snapshot })
+    .values({ id: id ?? newId(), fsmSnapshot: snapshot })
     .returning();
   if (!row) throw new Error("Failed to create conversation");
   return row;

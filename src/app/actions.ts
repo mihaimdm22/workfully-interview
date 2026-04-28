@@ -2,14 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { dispatch, startConversation } from "@/lib/fsm/orchestrator";
+import {
+  dispatch,
+  loadConversation,
+  startConversation,
+} from "@/lib/fsm/orchestrator";
 import { classifyIntent } from "@/lib/domain/intent";
 import { extractPdfText } from "@/lib/ai/extract-pdf";
-import {
-  clearConversationCookie,
-  getConversationCookie,
-  setConversationCookie,
-} from "@/lib/cookies";
+import { clearConversationCookie, getConversationCookie } from "@/lib/cookies";
 import type { BotEvent } from "@/lib/fsm/machine";
 
 const MAX_TEXT_LENGTH = 30_000;
@@ -20,12 +20,26 @@ export interface ActionResult {
   error?: string;
 }
 
+/**
+ * Ensure a conversation row exists for the cookie set by the proxy.
+ *
+ * Next 16 forbids cookie writes from Server Component renders, so cookie
+ * minting lives in `src/proxy.ts` (formerly `middleware.ts`). By the time any
+ * page or action runs, the cookie is guaranteed to exist. This function uses
+ * that cookie's id as the authoritative conversation id and lazily inserts
+ * the DB row on first use.
+ */
 export async function ensureConversation(): Promise<string> {
-  const existing = await getConversationCookie();
-  if (existing) return existing;
-  const { conversationId } = await startConversation();
-  await setConversationCookie(conversationId);
-  return conversationId;
+  const cookieId = await getConversationCookie();
+  if (!cookieId) {
+    throw new Error(
+      "Conversation cookie missing — middleware did not run for this request.",
+    );
+  }
+  const existing = await loadConversation(cookieId);
+  if (existing) return cookieId;
+  await startConversation(cookieId);
+  return cookieId;
 }
 
 export async function resetConversation(): Promise<void> {
