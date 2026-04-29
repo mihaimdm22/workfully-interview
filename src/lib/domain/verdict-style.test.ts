@@ -16,11 +16,14 @@ const globalsCss = readFileSync(
 );
 
 function lightModeValue(varName: string): string {
-  // Match `--name: #hex;` in the :root { } block before the dark-mode block.
-  // Crude but sufficient: the file's :root block is only ~30 lines.
-  const rootBlock = globalsCss.split("@media (prefers-color-scheme: dark)")[0]!;
+  // Pull tokens from the literal `:root { ... }` block. Anchor on `:root`
+  // explicitly so reordering or renaming the dark-mode selector
+  // (`[data-theme="dark"]`, `@media (prefers-color-scheme: dark)`, etc.)
+  // can't accidentally let dark-mode hex values masquerade as the light value.
+  const rootMatch = globalsCss.match(/:root\s*\{([\s\S]*?)\}/);
+  if (!rootMatch) throw new Error(":root block not found in globals.css");
   const re = new RegExp(`--${varName}:\\s*([^;]+);`);
-  const m = rootBlock.match(re);
+  const m = rootMatch[1]!.match(re);
   if (!m) throw new Error(`CSS variable --${varName} not found in :root`);
   return m[1]!.trim().toLowerCase();
 }
