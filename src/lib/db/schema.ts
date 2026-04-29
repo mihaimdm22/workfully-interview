@@ -36,6 +36,10 @@ export const conversations = pgTable(
   {
     id: varchar("id", { length: 32 }).primaryKey(),
     fsmSnapshot: jsonb("fsm_snapshot").$type<PersistedSnapshot>().notNull(),
+    // Optimistic-concurrency token. Every write must compare-and-swap on
+    // this; a bumped version means another request wrote the conversation
+    // first and the caller has to refetch. See ADR 0006.
+    version: integer("version").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .default(sql`now()`),
