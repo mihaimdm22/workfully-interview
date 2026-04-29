@@ -24,11 +24,7 @@ export default defineConfig({
         "src/lib/fsm/**/*.ts",
         "src/lib/ai/**/*.ts",
       ],
-      exclude: [
-        "src/lib/db/migrations/**",
-        "**/*.test.ts",
-        "src/lib/fsm/orchestrator.ts",
-      ],
+      exclude: ["src/lib/db/migrations/**", "**/*.test.ts"],
       // Hard floors. Below this, CI fails. Floors are conservative — tests
       // should generally run higher; the floor catches regressions, not perfection.
       thresholds: {
