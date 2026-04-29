@@ -98,9 +98,9 @@ function Section({
         {title}
       </div>
       <ul className="space-y-1.5">
-        {items.map((item) => (
+        {items.map((item, i) => (
           <li
-            key={`${item.requirement}|${item.matched}`}
+            key={`${i}|${item.requirement}`}
             className="flex items-start gap-2"
           >
             <span
@@ -147,8 +147,8 @@ function BulletBlock({
         {title}
       </div>
       <ul className="text-foreground/90 mt-1.5 list-disc space-y-1 pl-5">
-        {bullets.map((b) => (
-          <li key={`${title}|${b}`}>{b}</li>
+        {bullets.map((b, i) => (
+          <li key={`${title}|${i}|${b}`}>{b}</li>
         ))}
       </ul>
     </div>

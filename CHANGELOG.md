@@ -2,6 +2,37 @@
 
 All notable changes to the Workfully Screening Bot will be documented in this file.
 
+## [0.1.4.0] - 2026-04-29
+
+### Added
+
+- **Concurrency-safe orchestrator (W19').** Adds a `version` column to `conversations` and an optimistic compare-and-swap update primitive (`updateConversationSnapshotIfVersion`). Two concurrent `dispatch()` calls on the same conversation can no longer silently fork the FSM — the second writer gets a typed `ConcurrentModificationError` which the action layer surfaces to the user as "This conversation changed in another tab — refresh to continue." See ADR 0006 for the full rationale (including why we rejected `SELECT FOR UPDATE`).
+- **FSM-owned screening timeout** via XState `after` delayed transition inside `evaluating`. When the 60s timeout fires, XState transitions to idle and stops the invoked actor — which aborts its signal, which cancels the in-flight `generateObject` HTTP call. No more orchestrator-level fork window between "FSM resolved" and "orchestrator decided too late."
+- **AbortSignal plumbing through XState.** `screen()` now accepts a `signal` option and forwards it to `generateObject({ abortSignal })`. The orchestrator's `fromPromise` actor passes XState's own signal in, so cancellation is structural — not "we hope the network call finishes soon."
+- **Request-scoped structured logger** (`src/lib/log.ts`) emitting one JSON line per FSM transition with `{ conv, from, to, event, ms, model }`. Silent under `VITEST` so the unit suite isn't drowned in JSON.
+- **Testcontainers integration test** for the CAS primitive (`test/integration/orchestrator.concurrent.test.ts`). Boots a real Postgres, runs migrations, and verifies that two concurrent CAS attempts on the same expected version produce exactly one winner. Lives in a separate `pnpm test:integration` lane so the default `pnpm test` stays Docker-free for laptops.
+- **Snapshot schema tightening.** `isPersistedSnapshot` now narrows `value` to the actual FSM state set instead of `z.unknown()`. A row with a fictional state name is rejected at the DB boundary instead of crashing XState mid-rehydration.
+- **Server Actions unit tests** (`src/app/actions.test.ts`) covering text/PDF validation, intent → event mapping, filename-based JD/CV inference, and the `ConcurrentModificationError → "refresh"` mapping.
+- **Proxy unit tests** (`src/proxy.test.ts`) covering cookie minting, attribute correctness, and the new `secure` flag in production.
+- **Orchestrator integration test suite** (`src/lib/fsm/orchestrator.test.ts`) covering startConversation, success path, AI failure, actor.stop on error paths, and CAS conflict propagation.
+
+### Changed
+
+- **Cookie security in production.** Conversation cookie now sets `secure: true` when `NODE_ENV === "production"`. Local dev on `http://localhost` is unaffected.
+- **DB connection pool size is environment-aware.** Defaults to `1` on Vercel Fluid Compute (single-process per instance, larger pools just queue), `10` elsewhere. Override via `MAX_DB_CONNECTIONS`.
+- **Fake-AI test escape hatch uses explicit markers.** `[TEST_VERDICT_WEAK]` / `[TEST_VERDICT_WRONG_ROLE]` in the CV string force a specific verdict from the fake. Replaces the previous keyword heuristic that coupled the fake to fixture content. Default (no marker) returns `strong`.
+- **CI: `e2e` job depends on `test`.** A broken unit test now fast-fails before the slower Playwright job runs.
+- **CI: coverage uploads to Codecov** (requires `CODECOV_TOKEN` repo secret; action is a no-op when missing, so PRs from forks still pass).
+- **CI: new `integration` job** runs `pnpm test:integration` against a fresh Postgres container.
+- **Commitlint scopes extended** with `orchestrator`, `proxy`, `actions`, `log` so granular scopes work without hitting the husky hook.
+- **`actor.stop()` is now in `try/finally`** in `dispatch` and `loadConversation`. A thrown `waitFor` (timeout) or downstream DB write failure can no longer leak the actor's timers and subscriptions.
+- **`renderReply` simplification.** The unreachable middle branch was deleted; the function now short-circuits on errors and falls through to `promptForState` otherwise.
+
+### Fixed
+
+- **Stable React keys in `ScreeningResultCard`.** Replaced `key={i}` array-index keys with composite keys derived from data (`requirement|matched`, `title|bullet`). Prevents reconciliation churn when lists reorder or animate in.
+- **Stale doc comment in `cookies.ts`** referenced `src/middleware.ts`; the file was renamed to `src/proxy.ts` per Next 16. Updated.
+
 ## [0.1.3.0] - 2026-04-29
 
 ### Fixed
