@@ -75,6 +75,25 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
+  integration:
+    name: Integration (Testcontainers)
+    runs-on: ubuntu-latest
+    needs: [lint-and-typecheck, test]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: ".nvmrc"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Testcontainers spins up its own postgres:17-alpine via the docker
+      # daemon — no `services:` block needed. The runner's docker is at
+      # /var/run/docker.sock by default, which testcontainers auto-detects.
+      - run: pnpm test:integration
+
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
