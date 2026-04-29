@@ -1,11 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { resolveDatabaseUrl } from "./connection-string";
 
-const KEYS = [
-  "DATABASE_URL",
-  "STORAGE_DATABASE_URL",
-  "POSTGRES_URL",
-] as const;
+const KEYS = ["DATABASE_URL", "STORAGE_DATABASE_URL", "POSTGRES_URL"] as const;
 
 describe("resolveDatabaseUrl", () => {
   const saved: Record<string, string | undefined> = {};

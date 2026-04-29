@@ -1,7 +1,8 @@
 import "dotenv/config";
 import { defineConfig } from "drizzle-kit";
 
-const LOCAL_FALLBACK = "postgres://workfully:workfully@localhost:5432/workfully";
+const LOCAL_FALLBACK =
+  "postgres://workfully:workfully@localhost:5432/workfully";
 
 export default defineConfig({
   schema: "./src/lib/db/schema.ts",
