@@ -71,17 +71,6 @@ export async function getConversation(
   return rows[0] ?? null;
 }
 
-export async function updateConversationSnapshot(
-  id: string,
-  snapshot: PersistedSnapshot,
-): Promise<void> {
-  const db = getDb();
-  await db
-    .update(conversations)
-    .set({ fsmSnapshot: snapshot, updatedAt: new Date() })
-    .where(eq(conversations.id, id));
-}
-
 /**
  * Compare-and-swap update. Updates the conversation's snapshot only if the
  * current `version` still matches `expectedVersion`; otherwise throws
