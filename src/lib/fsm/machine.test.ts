@@ -4,6 +4,8 @@ import { botMachine, EVAL_TIMEOUT_MS } from "./machine";
 import type { ScreeningResult } from "@/lib/domain/screening";
 
 const FAKE_RESULT: ScreeningResult = {
+  candidateName: "Jane Doe",
+  role: "Senior Backend Engineer",
   verdict: "strong",
   score: 92,
   summary: "Strong fit for the role with most must-haves matched.",

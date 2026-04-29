@@ -114,6 +114,8 @@ function makeGatheringWithJdSnapshot(): unknown {
 }
 
 const FAKE_RESULT: ScreeningResult = {
+  candidateName: "Jane Doe",
+  role: "Senior Backend Engineer",
   verdict: "strong",
   score: 90,
   summary: "Strong fit.",

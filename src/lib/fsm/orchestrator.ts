@@ -14,7 +14,7 @@ import {
   recordScreening,
   updateConversationSnapshotIfVersion,
 } from "@/lib/db/repositories";
-import { screen, type ScreenOutput } from "@/lib/ai/screen";
+import { screen, screenStreaming, type ScreenOutput } from "@/lib/ai/screen";
 import { createLogger, stateString } from "@/lib/log";
 import type { ScreeningResult } from "@/lib/domain/screening";
 
@@ -54,12 +54,25 @@ interface DispatchResult {
   reply: string;
   result?: ScreeningResult;
   error?: string;
+  /**
+   * If this dispatch produced a new screening row (verdict went from
+   * undefined → present), the new row's id. Callers (server actions) use
+   * this to redirect the user to /screening/[id] when the AI is done.
+   */
+  newScreeningId?: string;
 }
 
 type ScreenMeta = { model: string; latencyMs: number };
 
 interface RequestContext {
   meta: { lastScreen: ScreenMeta | null };
+  /**
+   * Optional streaming hook. When set, the screening actor calls
+   * `screenStreaming()` and forwards each partial via this callback. Set
+   * exclusively by `dispatchStreaming` — atomic `dispatch` callers leave
+   * this null and the actor uses `screen()`.
+   */
+  onPartial: ((partial: Partial<ScreeningResult>) => void) | null;
 }
 
 /**
@@ -67,10 +80,9 @@ interface RequestContext {
  * mutable holder so the orchestrator can pull metadata (model, latency) after the
  * actor resolves, without resorting to module-level globals.
  *
- * `signal` from XState's `fromPromise` is forwarded to `screen()` so that
+ * `signal` from XState's `fromPromise` is forwarded to the AI call so that
  * when the FSM exits `evaluating` (e.g., the `after` timeout fires), the
- * in-flight `generateObject` call is actually cancelled — not just
- * abandoned.
+ * in-flight call is actually cancelled — not just abandoned.
  */
 function machineForRequest(ctx: RequestContext) {
   return botMachine.provide({
@@ -79,7 +91,12 @@ function machineForRequest(ctx: RequestContext) {
         ScreeningResult,
         { jobDescription: string; cv: string }
       >(async ({ input, signal }) => {
-        const out: ScreenOutput = await screen(input, { signal });
+        const out: ScreenOutput = ctx.onPartial
+          ? await screenStreaming(input, {
+              signal,
+              onPartial: ctx.onPartial,
+            })
+          : await screen(input, { signal });
         ctx.meta.lastScreen = { model: out.model, latencyMs: out.latencyMs };
         return out.result;
       }),
@@ -87,8 +104,10 @@ function machineForRequest(ctx: RequestContext) {
   });
 }
 
-function newRequestContext(): RequestContext {
-  return { meta: { lastScreen: null } };
+function newRequestContext(
+  onPartial: RequestContext["onPartial"] = null,
+): RequestContext {
+  return { meta: { lastScreen: null }, onPartial };
 }
 
 /**
@@ -145,12 +164,31 @@ export async function startConversation(id?: string): Promise<DispatchResult> {
   };
 }
 
-export async function dispatch({
-  conversationId,
-  event,
-  userMessage,
-  attachment,
-}: DispatchInput): Promise<DispatchResult> {
+export async function dispatch(input: DispatchInput): Promise<DispatchResult> {
+  return dispatchInternal(input, null);
+}
+
+/**
+ * Streaming sibling of `dispatch`. Same semantics — drives the FSM, persists
+ * the snapshot, returns the final state — but additionally forwards each
+ * partial verdict to `onPartial` while the AI call is in flight. The SSE
+ * route handler uses this so the client can render progressive reveal.
+ *
+ * `onPartial` only fires when the FSM transitions through `evaluating`. For
+ * dispatches that don't trigger AI (gathering, /cancel, /reset), it's never
+ * called — same shape as the atomic path.
+ */
+export async function dispatchStreaming(
+  input: DispatchInput,
+  onPartial: (partial: Partial<ScreeningResult>) => void,
+): Promise<DispatchResult> {
+  return dispatchInternal(input, onPartial);
+}
+
+async function dispatchInternal(
+  { conversationId, event, userMessage, attachment }: DispatchInput,
+  onPartial: ((partial: Partial<ScreeningResult>) => void) | null,
+): Promise<DispatchResult> {
   const log = createLogger(conversationId);
   const dispatchStart = Date.now();
   const convo = await getConversation(conversationId);
@@ -173,7 +211,7 @@ export async function dispatch({
     });
   }
 
-  const ctx = newRequestContext();
+  const ctx = newRequestContext(onPartial);
   const machine = machineForRequest(ctx);
   const actor = createActor(machine, {
     input: { conversationId },
@@ -237,13 +275,14 @@ export async function dispatch({
     before.matches({ screening: "evaluating" }) === false &&
     after.matches({ screening: "presentingResult" }) &&
     after.context.result !== undefined;
+  let newScreeningId: string | undefined;
   if (
     justFinishedScreening &&
     after.context.result &&
     after.context.jobDescription &&
     after.context.cv
   ) {
-    await recordScreening({
+    newScreeningId = await recordScreening({
       conversationId,
       jobDescription: after.context.jobDescription,
       cv: after.context.cv,
@@ -275,6 +314,7 @@ export async function dispatch({
     reply,
     result: after.context.result,
     error: after.context.error,
+    newScreeningId,
   };
 }
 
