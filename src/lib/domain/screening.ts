@@ -25,6 +25,16 @@ const requirementMatchSchema = z.object({
 // and `minItems`/`maxItems`, so keeping them here would break OpenRouter's
 // promise of provider portability (ADR 0004). Shape + types are still enforced.
 export const screeningResultSchema = z.object({
+  candidateName: z
+    .string()
+    .describe(
+      "Full name of the candidate as it appears on the CV. Use 'Unknown candidate' if the CV has no clear name.",
+    ),
+  role: z
+    .string()
+    .describe(
+      "Job title from the JD, normalized to title case (e.g., 'Senior Backend Engineer'). Use 'Unspecified role' if the JD has no clear title.",
+    ),
   verdict: fitVerdictSchema.describe(
     'Overall categorization of fit. Use "wrong_role" only when the CV is for a different profession entirely.',
   ),
