@@ -15,6 +15,7 @@ import {
   updateConversationSnapshotIfVersion,
 } from "@/lib/db/repositories";
 import { screen, type ScreenOutput } from "@/lib/ai/screen";
+import { createLogger, stateString } from "@/lib/log";
 import type { ScreeningResult } from "@/lib/domain/screening";
 
 /**
@@ -150,6 +151,8 @@ export async function dispatch({
   userMessage,
   attachment,
 }: DispatchInput): Promise<DispatchResult> {
+  const log = createLogger(conversationId);
+  const dispatchStart = Date.now();
   const convo = await getConversation(conversationId);
   if (!convo) throw new Error(`Conversation not found: ${conversationId}`);
 
@@ -209,6 +212,13 @@ export async function dispatch({
     }
 
     persisted = actor.getPersistedSnapshot() as PersistedSnapshot;
+    log.info({
+      event: "fsm.transition",
+      from: stateString(before.value),
+      to: stateString(after.value),
+      ms: ctx.meta.lastScreen?.latencyMs,
+      model: ctx.meta.lastScreen?.model,
+    });
   } finally {
     actor.stop();
   }
@@ -248,6 +258,14 @@ export async function dispatch({
     conversationId,
     role: "bot",
     content: reply,
+  });
+
+  log.info({
+    event: "fsm.dispatch.done",
+    ms: Date.now() - dispatchStart,
+    state: stateString(after.value),
+    hasResult: after.context.result !== undefined,
+    hasError: after.context.error !== undefined,
   });
 
   return {
