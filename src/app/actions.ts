@@ -10,6 +10,7 @@ import {
 import { classifyIntent } from "@/lib/domain/intent";
 import { extractPdfText } from "@/lib/ai/extract-pdf";
 import { clearConversationCookie, getConversationCookie } from "@/lib/cookies";
+import { ConcurrentModificationError } from "@/lib/db/repositories";
 import type { BotEvent } from "@/lib/fsm/machine";
 
 const MAX_TEXT_LENGTH = 30_000;
@@ -175,6 +176,16 @@ async function processInput(opts: {
       attachment: opts.attachment,
     });
   } catch (err) {
+    // Map typed errors to product strings the user can act on. Anything
+    // unknown surfaces the raw message — not great UX, but better than
+    // swallowing the failure silently.
+    if (err instanceof ConcurrentModificationError) {
+      return {
+        ok: false,
+        error:
+          "This conversation changed in another tab — refresh to continue.",
+      };
+    }
     return {
       ok: false,
       error: err instanceof Error ? err.message : String(err),
