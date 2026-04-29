@@ -10,6 +10,7 @@ import {
   type Message,
   type NewMessage,
   type NewScreening,
+  type Screening,
 } from "./schema";
 import type { PersistedSnapshot } from "@/lib/fsm/snapshot";
 
@@ -87,4 +88,15 @@ export async function recordScreening(
 ): Promise<void> {
   const db = getDb();
   await db.insert(screenings).values({ id: newId(), ...screening });
+}
+
+export async function listScreenings(
+  conversationId: string,
+): Promise<Screening[]> {
+  const db = getDb();
+  return db
+    .select()
+    .from(screenings)
+    .where(eq(screenings.conversationId, conversationId))
+    .orderBy(asc(screenings.createdAt));
 }
