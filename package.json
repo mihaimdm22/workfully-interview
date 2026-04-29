@@ -60,6 +60,7 @@
     "@commitlint/config-conventional": "^20.5.0",
     "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4",
+    "@testcontainers/postgresql": "^11.14.0",
     "@types/node": "^25.6.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
