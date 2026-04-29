@@ -1,7 +1,21 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useSyncExternalStore, useTransition } from "react";
 import { createShareLink } from "@/app/actions";
+
+/**
+ * SSR-safe `window.location.origin`. Returns "" during server render and the
+ * first client render (so hydration matches), then the real origin on every
+ * render after mount. Using `useSyncExternalStore` rather than `useEffect +
+ * setState` keeps this lint-clean and avoids a cascading second render.
+ */
+function useOrigin(): string {
+  return useSyncExternalStore(
+    () => () => {},
+    () => window.location.origin,
+    () => "",
+  );
+}
 
 interface ShareRowProps {
   screeningId: string;
@@ -22,12 +36,11 @@ export function ShareRow({
   const [pending, startTransition] = useTransition();
   const [copied, setCopied] = useState(false);
 
-  const url =
-    typeof window !== "undefined" && slug
-      ? `${window.location.origin}/s/${slug}`
-      : slug
-        ? `/s/${slug}`
-        : "";
+  // Renders "" on the server, "" on the first client render (so hydration
+  // matches), then `https://host` on every render after mount. This avoids
+  // the SSR/client divergence the previous `typeof window` branch caused.
+  const origin = useOrigin();
+  const url = slug ? `${origin}/s/${slug}` : "";
 
   function generate() {
     startTransition(async () => {

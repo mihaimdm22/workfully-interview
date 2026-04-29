@@ -19,7 +19,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
       <button
         ref={ref}
         type="button"
-        className={`border-border bg-bg text-fg-muted hover:bg-muted inline-flex size-8 items-center justify-center rounded-md border transition-colors ${className}`}
+        className={`border-border bg-bg text-fg-muted hover:bg-muted inline-flex size-10 items-center justify-center rounded-md border transition-colors sm:size-8 ${className}`}
         {...rest}
       >
         {children}
