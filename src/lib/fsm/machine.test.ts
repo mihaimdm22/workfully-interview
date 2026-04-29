@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { createActor, fromPromise, waitFor } from "xstate";
-import { botMachine } from "./machine";
+import { botMachine, EVAL_TIMEOUT_MS } from "./machine";
 import type { ScreeningResult } from "@/lib/domain/screening";
 
 const FAKE_RESULT: ScreeningResult = {
@@ -251,6 +251,47 @@ describe("botMachine", () => {
     const snap = actor.getSnapshot();
     expect(snap.value).toBe("idle");
     expect(snap.context.result).toBeUndefined();
+  });
+
+  describe("evaluating timeout (FSM-owned via xstate `after`)", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("fires `after` and lands in idle with the typed timeout error", async () => {
+      vi.useFakeTimers();
+      const actor = makeActor({
+        screenImpl: () =>
+          new Promise(() => {
+            /* never resolves */
+          }),
+      });
+      actor.start();
+      actor.send({ type: "PROVIDE_JD", text: "JD" });
+      actor.send({ type: "PROVIDE_CV", text: "CV" });
+      expect(actor.getSnapshot().value).toEqual({ screening: "evaluating" });
+
+      await vi.advanceTimersByTimeAsync(EVAL_TIMEOUT_MS + 1);
+
+      const snap = actor.getSnapshot();
+      expect(snap.value).toBe("idle");
+      expect(snap.context.error).toMatch(/longer than 60 seconds/i);
+      expect(snap.context.jobDescription).toBeUndefined();
+      expect(snap.context.cv).toBeUndefined();
+    });
+
+    it("does NOT fire `after` if screen resolves first", async () => {
+      vi.useFakeTimers();
+      const actor = makeActor();
+      actor.start();
+      actor.send({ type: "PROVIDE_JD", text: "JD" });
+      actor.send({ type: "PROVIDE_CV", text: "CV" });
+      await vi.advanceTimersByTimeAsync(10);
+      const snap = actor.getSnapshot();
+      expect(snap.value).toEqual({ screening: "presentingResult" });
+      expect(snap.context.error).toBeUndefined();
+      expect(snap.context.result).toEqual(FAKE_RESULT);
+    });
   });
 
   it("persists and rehydrates a snapshot mid-flow", () => {

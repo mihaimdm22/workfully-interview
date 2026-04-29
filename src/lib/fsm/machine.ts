@@ -20,7 +20,20 @@ import type { ScreeningResult } from "@/lib/domain/screening";
  * `cancel` and `reset` are accepted at any sub-state of SCREENING and JOB_BUILDER.
  * The screening actor is provided externally (real AI in prod, mock in tests),
  * which keeps the machine pure and unit-testable.
+ *
+ * Timeout policy lives in the FSM, not the orchestrator. An external
+ * `waitFor(...timeout)` in the orchestrator (a) leaves a fork window between
+ * the AI call resolving and the orchestrator deciding it's "too late" and
+ * (b) doesn't actually cancel the AI call. The `after` delayed transition
+ * inside `evaluating` transitions out cleanly, which causes XState to stop
+ * the invoked promise actor and fire its AbortSignal — and `screen()` is
+ * wired to forward that signal into `generateObject({ abortSignal })`.
+ * See ADR 0006.
  */
+
+export const EVAL_TIMEOUT_MS = 60_000;
+
+const TIMEOUT_ERROR_MESSAGE = "AI took longer than 60 seconds. Try again.";
 
 interface BotContext {
   conversationId: string;
@@ -192,6 +205,20 @@ export const botMachine = setup({
                       ? event.error.message
                       : String(event.error),
                 }),
+                "clearScreeningInputsKeepError",
+              ],
+            },
+          },
+          // FSM-owned timeout. When this fires, XState transitions out of
+          // `evaluating` and stops the invoked actor — which aborts its
+          // signal, which (after the orchestrator forwards it) aborts the
+          // in-flight `generateObject` HTTP call to OpenRouter. No
+          // orchestrator-level race window.
+          after: {
+            [EVAL_TIMEOUT_MS]: {
+              target: "#bot.idle",
+              actions: [
+                assign({ error: TIMEOUT_ERROR_MESSAGE }),
                 "clearScreeningInputsKeepError",
               ],
             },
