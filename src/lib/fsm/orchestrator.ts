@@ -24,7 +24,7 @@ import type { ScreeningResult } from "@/lib/domain/screening";
  *
  * Inside, we:
  *   1. Hydrate the FSM from the conversation's persisted snapshot.
- *   2. Provide a real screening actor (the `fromPromise` calls Anthropic).
+ *   2. Provide a real screening actor (the `fromPromise` calls the LLM via OpenRouter).
  *   3. Send the event, await any async invoke.
  *   4. Persist the new snapshot + transcript messages atomically-ish.
  *

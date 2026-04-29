@@ -1,6 +1,6 @@
 import "server-only";
 import { generateObject, type LanguageModel } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { openrouter } from "@openrouter/ai-sdk-provider";
 import {
   screeningResultSchema,
   type ScreeningResult,
@@ -14,9 +14,13 @@ import {
  * matches our Zod schema. If the model can't satisfy the schema, the SDK retries
  * automatically; if it still fails, the call throws — the FSM moves to the error
  * branch and the user is told the model failed (we don't fabricate a result).
+ *
+ * Routed through OpenRouter so the same call works against any vendor: the
+ * default targets Claude Sonnet 4.6 (`anthropic/claude-sonnet-4.6`), but
+ * `OPENROUTER_MODEL` can point at any OpenRouter-supported model id.
  */
 
-const DEFAULT_MODEL = "claude-sonnet-4-6";
+const DEFAULT_MODEL = "anthropic/claude-sonnet-4.6";
 
 interface ScreenInput {
   jobDescription: string;
@@ -73,8 +77,8 @@ export async function screen(
     return fakeScreen(input);
   }
 
-  const modelId = deps.modelId ?? process.env.ANTHROPIC_MODEL ?? DEFAULT_MODEL;
-  const model = deps.model ?? anthropic(modelId);
+  const modelId = deps.modelId ?? process.env.OPENROUTER_MODEL ?? DEFAULT_MODEL;
+  const model = deps.model ?? openrouter(modelId);
 
   const startedAt = Date.now();
   const { object } = await generateObject({

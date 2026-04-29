@@ -25,11 +25,11 @@ The original challenge brief lives in [`docs/CHALLENGE.md`](./docs/CHALLENGE.md)
 pnpm install
 pnpm db:up               # boots Postgres in Docker
 pnpm db:migrate          # applies the schema
-cp .env.example .env     # set ANTHROPIC_API_KEY
+cp .env.example .env     # set OPENROUTER_API_KEY
 pnpm dev                 # http://localhost:3000
 ```
 
-For E2E or contributor demos without burning Anthropic credits:
+For E2E or contributor demos without burning OpenRouter credits:
 
 ```bash
 WORKFULLY_FAKE_AI=1 pnpm dev
@@ -46,7 +46,7 @@ WORKFULLY_FAKE_AI=1 pnpm dev
 - **Pure FSM, request-scoped actor.** The screening AI call is modelled as an XState
   actor that's _provided per request_, so the machine itself stays pure (no AI
   imports). Tests use a fake actor that returns a fixture; production wires up the
-  real Anthropic call. Same machine, two contexts.
+  real LLM call (Claude via OpenRouter). Same machine, two contexts.
 - **Structured output, not string parsing.** The screening verdict is generated via
   `generateObject` against a Zod schema (`src/lib/domain/screening.ts`). If the model
   can't produce schema-valid JSON, the SDK retries automatically and the actor either
@@ -69,7 +69,7 @@ WORKFULLY_FAKE_AI=1 pnpm dev
 | Runtime    | Next.js 16 (App Router) + React 19                                        | [0002](./docs/adr/0002-architecture.md)             |
 | FSM        | XState v5                                                                 | [0001](./docs/adr/0001-fsm-with-xstate.md)          |
 | Database   | Postgres 17 + Drizzle ORM                                                 | [0003](./docs/adr/0003-database.md)                 |
-| AI         | Vercel AI SDK v6 + Anthropic Claude Sonnet 4.6                            | [0004](./docs/adr/0004-ai-and-structured-output.md) |
+| AI         | Vercel AI SDK v6 + Claude Sonnet 4.6 via OpenRouter                       | [0004](./docs/adr/0004-ai-and-structured-output.md) |
 | Validation | Zod v4 (single source of truth: schema → types → JSON schema for the LLM) | —                                                   |
 | Testing    | Vitest (unit + coverage) + Playwright (E2E with fake AI)                  | [0005](./docs/adr/0005-testing-strategy.md)         |
 | Style      | Tailwind CSS 4                                                            | —                                                   |
@@ -98,7 +98,7 @@ All versions are the latest stable as of April 2026.
         │ │ awaitingCv        │ │
         │ └─────────┬─────────┘ │
         │           ▼            │
-        │ ┌───────────────────┐ │       ──invokes screen() actor──▶ Anthropic
+        │ ┌───────────────────┐ │       ──invokes screen() actor──▶ OpenRouter
         │ │ evaluating        │ │       ◀──────  result OR error  ──
         │ └─────┬───────┬─────┘ │
         │       ▼       ▼       │
@@ -237,7 +237,7 @@ Allowed scopes: `fsm`, `ai`, `db`, `ui`, `domain`, `e2e`, `ci`, `deps`, `docs`, 
 
 1. `pnpm install`
 2. `pnpm db:up && pnpm db:migrate`
-3. Copy `.env.example` to `.env` and add your `ANTHROPIC_API_KEY`.
+3. Copy `.env.example` to `.env` and add your `OPENROUTER_API_KEY`.
 4. `pnpm dev`
 5. Open http://localhost:3000.
 6. Type `/screen`, paste a JD (try copying from `fixtures/job-description.pdf`),

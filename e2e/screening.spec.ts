@@ -8,7 +8,7 @@ import { test, expect } from "@playwright/test";
  *   - Test-mode AI:        `WORKFULLY_FAKE_AI=1 pnpm dev`
  *
  * The fake AI returns a deterministic verdict based on simple keyword heuristics
- * so we don't depend on Anthropic for E2E. Real screening accuracy is covered
+ * so we don't depend on OpenRouter for E2E. Real screening accuracy is covered
  * by the unit tests against the schema (see src/lib/ai/screen.test.ts).
  */
 

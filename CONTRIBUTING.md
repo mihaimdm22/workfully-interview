@@ -8,11 +8,11 @@ cd workfully-interview
 pnpm install
 pnpm db:up
 pnpm db:migrate
-cp .env.example .env # then add ANTHROPIC_API_KEY
+cp .env.example .env # then add OPENROUTER_API_KEY
 pnpm dev
 ```
 
-For an AI-free local run (deterministic verdicts, no Anthropic credits burned):
+For an AI-free local run (deterministic verdicts, no OpenRouter credits burned):
 
 ```bash
 WORKFULLY_FAKE_AI=1 pnpm dev
