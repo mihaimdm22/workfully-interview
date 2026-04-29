@@ -2,6 +2,37 @@
 
 All notable changes to the Workfully Screening Bot will be documented in this file.
 
+## [0.2.0.0] - 2026-04-29
+
+### Added
+
+- **Workspace platform shell.** New sidebar (256px) with brand wordmark, "+ New screening" CTA, recent-screenings list with verdict dot + score, and Demo workspace footer. Top bar with breadcrumbs, ⌘K search input, theme toggle, and per-page trailing actions. The chat is no longer a single-page experience — it's a workspace.
+- **Dashboard at `/`** with screening cards (verdict pill, score, role, summary, "Open" link), tab strip (`All / Strong / Moderate / Weak / Wrong role`) wired to URL filters via `?filter=<verdict>`, empty state with sample-fixtures hint, and "no matches" state with clear-filter link.
+- **Permanent screening detail page at `/screening/[id]`.** After a verdict lands, the orchestrator redirects to a permanent URL: `<VerdictHeader>` with model + latency meta line, `<RequirementList>` for must-haves and nice-to-haves, two-column `<BulletBlock>` for strengths/gaps, `<Recommendation>` block with "Copy for Slack", and `<ShareRow>` with "Generate share link".
+- **Public share pages at `/s/[slug]`.** Bare layout (no sidebar leak), 128-bit unguessable slug from `crypto.randomBytes(16)` base32-encoded. New `share_links` table with `ON DELETE CASCADE` + `UNIQUE` on `screening_id`. Public page hides the JD, CV, and conversation log — verdict + must-haves + recommendation only. TypeScript-enforced privacy boundary via separate `getScreeningById` (private) vs `getScreeningForShare` (public) repository functions returning narrower types.
+- **Open Graph share-card images** at `/s/[slug]/opengraph-image` (1200×630, generated via `next/og` with Geist + Geist Mono fonts loaded at request time). Color cascade by verdict tier — green for strong, blue for moderate, amber for weak, red for wrong-role — applied to the pill, summary border, score numeral, and right-rail gradient. Pasting a `/s/[slug]` URL into Slack now unfurls a real share card.
+- **Real wire-streaming verdicts** via `streamObject` (AI SDK v6). New `screenStreaming()` companion to `screen()` that emits each partial via an `onPartial` callback. New `dispatchStreaming()` in the orchestrator threads the callback through the screening actor. New SSE route handler at `/api/screening/stream` returns `text/event-stream` with `user-message` (echo for optimistic render), `partial`, `done` (with redirect URL), and `error` event types. New `<ChatStream>` client component consumes the SSE response, optimistically renders user messages, progressively renders the verdict via `<StreamingVerdict>` in real time, and navigates to `/screening/[id]` when the stream closes. Fake-AI mode (`WORKFULLY_FAKE_AI=1`) emits 11 timed partial ticks over ~2.5s so demos show streaming behavior without burning OpenRouter credits.
+- **Server-side PDF download** at `/s/[slug]/pdf/download`. Headless Chromium (`puppeteer-core` + `@sparticuz/chromium`) navigates to the print HTML and screenshots as A4 PDF with 14mm margins, `printBackground: true`, and one-week edge cache. Local dev probes `/Applications/Google Chrome.app/...` so no 50MB binary download is needed for development. Vercel function bumped to `memory: 1024, maxDuration: 30` via `vercel.json`.
+- **Cmd-K search palette** (`<CmdKPalette>`). Global ⌘K / Ctrl-K shortcut, click-to-open from the topbar's decorative search input, hand-rolled fuzzy match scorer (`src/lib/domain/fuzzy-match.ts`) — exact prefix on name = 100, contiguous substring = 80, word-boundary on role = 60, anywhere in summary = 30. Arrow up/down navigation, enter to open, escape or backdrop-click to close. No `fuse.js` dep — 30 lines of code beats a 9KB library at this scale.
+- **Theme toggle** (`<ThemeToggle>`) with `localStorage.theme` persistence and a tiny inline script in `<head>` that sets `data-theme` before React hydrates — no flash of wrong theme on first paint. Manual toggle wins over `prefers-color-scheme`.
+- **Design system as living document.** New `DESIGN.md` at the repo root captures tokens (color, type, spacing, radii, layout), component contracts, responsive breakpoints, a11y rules, motion, and dark-mode behavior. New `src/lib/domain/verdict-style.ts` is the single source of truth for verdict color mappings — used by the dashboard pill, sidebar dot, screening header, public share page, OG card, and PDF page. Drift test at `verdict-style.test.ts` reads `globals.css` and asserts every CSS variable matches the constants — CI fails the build if they diverge.
+- **Reference HTML mockups** in `.context/mockups/` (dashboard, screening detail, share-card, plus shared `_tokens.css`). Generated during `/plan-design-review` and used as the visual contract during implementation.
+- **`candidateName` and `role` fields on `screeningResultSchema`.** The model now extracts both as part of the verdict (single AI call, no extra latency), so the dashboard cards and sidebar rows show real names/roles instead of "Untitled screening". Fake AI defaults to "Test Candidate" + "Senior Backend Engineer".
+- **End-to-end test coverage** for the new routing model: dashboard listing, public share access without sidebar, share-link round-trip. `e2e/screening.spec.ts` updated to the new `/screening/new` chat URL and the new `data-testid="verdict-header"` on the detail page.
+
+### Changed
+
+- **Tailwind 4.2.4 with utility-first refactor.** Every component (~20 files) migrated from inline `style={{ ... }}` to Tailwind utility classes generated from `@theme inline` tokens. New utilities: `w-sidebar`, `h-header`, `shadow-pop`, `animate-fade-in`, `animate-scale-in`, `animate-shimmer`, `animate-pulse-dot`. Custom helpers `.skeleton` and `.shimmer-bar` for the patterns Tailwind doesn't compose cleanly. Net: zero remaining inline styles outside the `@vercel/og` image route (which requires inline by design).
+- **Cookie composition: paperclip emoji removed** from message-bubble attachment chips and composer button — replaced with inline SVG. DESIGN.md forbids emoji as design elements.
+- **`recordScreening` returns the new screening id** so the action can `redirect()` to `/screening/<id>` after a verdict lands.
+- **`ensureConversation()` race-tolerance hardened.** When the workspace layout and a child page both call it in parallel, the second insert hits the primary-key constraint — we now unwrap `DrizzleQueryError.cause` and check the postgres `23505` SQLSTATE so the duplicate-key race correctly degrades to "winner already created the row" instead of 500ing.
+- **Static HTML mockups generated as design source of truth.** AI image generation was blocked on OpenAI org verification; we shipped hand-built HTML mockups instead, which became the literal HTML the implementation ports.
+
+### Removed
+
+- Single-page chat at `/`. The active chat lives at `/screening/new` and verdicts get their own permanent URLs at `/screening/[id]`.
+- `<Composer>` (replaced by `<ChatStream>`), `<ResetButton>` quick-action (FSM `/reset` text command still works), redundant top-level `tailwindcss` dep (only `@tailwindcss/postcss` is actually loaded).
+
 ## [0.1.4.0] - 2026-04-29
 
 ### Added
