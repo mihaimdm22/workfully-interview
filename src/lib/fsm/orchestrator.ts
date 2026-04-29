@@ -6,7 +6,7 @@ import {
   type PersistedSnapshot,
   type BotSnapshot,
 } from "./snapshot";
-import { promptForState } from "./replies";
+import { promptForSnapshot, promptForState } from "./replies";
 import {
   appendMessage,
   createConversation,
@@ -83,6 +83,26 @@ function newRequestContext(): RequestContext {
 }
 
 /**
+ * Rewrites legacy state values (`awaitingJobDescription`, `awaitingCv`) to the
+ * unified `gathering` substate before XState rehydrates. XState 5 doesn't fire
+ * eventless transitions on rehydrate, so an in-machine alias wouldn't catch
+ * these — we have to normalize at the boundary.
+ */
+function migrateLegacySnapshot(raw: PersistedSnapshot): PersistedSnapshot {
+  const value = raw.value;
+  if (
+    value &&
+    typeof value === "object" &&
+    "screening" in value &&
+    (value.screening === "awaitingJobDescription" ||
+      value.screening === "awaitingCv")
+  ) {
+    return { ...raw, value: { screening: "gathering" } };
+  }
+  return raw;
+}
+
+/**
  * Create a fresh conversation row. If `id` is provided (the cookie value set by
  * middleware), the row is created with that exact id so cookie ↔ DB stay in
  * lockstep. Otherwise nanoid-generated.
@@ -98,7 +118,10 @@ export async function startConversation(id?: string): Promise<DispatchResult> {
 
   const convo = await createConversation(snapshot, id);
 
-  const reply = promptForState(snapshot.value as BotSnapshot["value"]);
+  const reply = promptForState(
+    snapshot.value as BotSnapshot["value"],
+    snapshot.context as BotSnapshot["context"],
+  );
   await appendMessage({
     conversationId: convo.id,
     role: "bot",
@@ -125,6 +148,7 @@ export async function dispatch({
   if (!isPersistedSnapshot(convo.fsmSnapshot)) {
     throw new Error("Persisted FSM snapshot is malformed");
   }
+  const persistedInput = migrateLegacySnapshot(convo.fsmSnapshot);
 
   // Append user message first so it shows up even if the AI call later throws.
   if (userMessage) {
@@ -143,7 +167,7 @@ export async function dispatch({
     input: { conversationId },
     // XState's snapshot generic uses inferred internal types; our zod-validated
     // PersistedSnapshot is structurally identical, so we cast at the boundary.
-    snapshot: convo.fsmSnapshot as Parameters<
+    snapshot: persistedInput as Parameters<
       typeof createActor<typeof machine>
     >[1] extends infer O
       ? O extends { snapshot?: infer S }
@@ -218,6 +242,7 @@ export async function loadConversation(conversationId: string): Promise<{
 } | null> {
   const convo = await getConversation(conversationId);
   if (!convo || !isPersistedSnapshot(convo.fsmSnapshot)) return null;
+  const persistedInput = migrateLegacySnapshot(convo.fsmSnapshot);
 
   const ctx = newRequestContext();
   const machine = machineForRequest(ctx);
@@ -225,7 +250,7 @@ export async function loadConversation(conversationId: string): Promise<{
     input: { conversationId },
     // XState's snapshot generic uses inferred internal types; our zod-validated
     // PersistedSnapshot is structurally identical, so we cast at the boundary.
-    snapshot: convo.fsmSnapshot as Parameters<
+    snapshot: persistedInput as Parameters<
       typeof createActor<typeof machine>
     >[1] extends infer O
       ? O extends { snapshot?: infer S }
@@ -242,14 +267,7 @@ export async function loadConversation(conversationId: string): Promise<{
 
 function renderReply(snap: BotSnapshot): string {
   if (snap.context.error) {
-    return `Sorry, the screening failed: ${snap.context.error}\n\n${promptForState(snap.value)}`;
+    return `Sorry, the screening failed: ${snap.context.error}\n\n${promptForSnapshot(snap)}`;
   }
-  if (
-    snap.value === "idle" &&
-    snap.context.result === undefined &&
-    snap.context.jobDescription === undefined
-  ) {
-    return promptForState(snap.value);
-  }
-  return promptForState(snap.value);
+  return promptForSnapshot(snap);
 }

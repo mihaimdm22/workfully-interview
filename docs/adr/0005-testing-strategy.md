@@ -67,7 +67,8 @@ opposite.
 - `/cancel` from jobBuilder
 - Actor failure → `idle` with error preserved (regression: `clearScreening`
   used to nuke the error message; the test caught it)
-- `/reset` from `presentingResult` clears verdict
+- `/reset` from every screening sub-state (`awaitingJobDescription`, `awaitingCv`,
+  `presentingResult`) returns to `idle` and clears verdict
 - Re-entering screening from `presentingResult` clears prior verdict
 - **Snapshot persistence and rehydration** mid-flow (proves the conversation can
   survive a server restart)

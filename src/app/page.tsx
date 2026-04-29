@@ -1,6 +1,7 @@
 import { ensureConversation } from "./actions";
-import { listMessages } from "@/lib/db/repositories";
+import { listMessages, listScreenings } from "@/lib/db/repositories";
 import { loadConversation } from "@/lib/fsm/orchestrator";
+import { pairScreeningsToMessages } from "@/lib/fsm/pair-screenings";
 import { MessageBubble } from "@/components/message-bubble";
 import { ScreeningResultCard } from "@/components/screening-result-card";
 import { StatePill } from "@/components/state-pill";
@@ -11,12 +12,14 @@ export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const conversationId = await ensureConversation();
-  const [messages, loaded] = await Promise.all([
+  const [messages, screenings, loaded] = await Promise.all([
     listMessages(conversationId),
+    listScreenings(conversationId),
     loadConversation(conversationId),
   ]);
   const stateValue = loaded?.state ?? "idle";
-  const result = loaded?.context.result;
+  const stateContext = loaded?.context;
+  const resultByMessageId = pairScreeningsToMessages(messages, screenings);
 
   return (
     <main className="mx-auto flex h-dvh w-full max-w-3xl flex-col">
@@ -30,7 +33,7 @@ export default async function Home() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <StatePill value={stateValue} />
+          <StatePill value={stateValue} context={stateContext} />
           <ResetButton />
         </div>
       </header>
@@ -43,13 +46,11 @@ export default async function Home() {
         {messages.length === 0 ? (
           <p className="text-muted-foreground text-sm">Loading…</p>
         ) : (
-          messages.map((m, i) => {
-            const isLast = i === messages.length - 1;
-            const showResult =
-              isLast && m.role === "bot" && result !== undefined;
+          messages.map((m) => {
+            const result = resultByMessageId.get(m.id);
             return (
               <MessageBubble key={m.id} message={m}>
-                {showResult && (
+                {result && (
                   <div className="mt-3">
                     <ScreeningResultCard result={result} />
                   </div>

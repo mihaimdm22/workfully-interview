@@ -46,12 +46,12 @@ describe("botMachine", () => {
     expect(actor.getSnapshot().value).toBe("idle");
   });
 
-  it("idle → screening.awaitingJobDescription on START_SCREENING", () => {
+  it("idle → screening.gathering on START_SCREENING", () => {
     const actor = makeActor();
     actor.start();
     actor.send({ type: "START_SCREENING" });
     expect(actor.getSnapshot().value).toEqual({
-      screening: "awaitingJobDescription",
+      screening: "gathering",
     });
   });
 
@@ -62,43 +62,93 @@ describe("botMachine", () => {
     expect(actor.getSnapshot().value).toBe("jobBuilder");
   });
 
-  it("progresses through awaitingJobDescription → awaitingCv when JD provided", () => {
+  it("PROVIDE_JD from idle auto-starts screening with JD set", () => {
     const actor = makeActor();
     actor.start();
-    actor.send({ type: "START_SCREENING" });
-    actor.send({ type: "PROVIDE_TEXT", text: "JD content" });
-    expect(actor.getSnapshot().value).toEqual({ screening: "awaitingCv" });
-    expect(actor.getSnapshot().context.jobDescription).toBe("JD content");
+    actor.send({ type: "PROVIDE_JD", text: "JD content" });
+    const snap = actor.getSnapshot();
+    expect(snap.value).toEqual({ screening: "gathering" });
+    expect(snap.context.jobDescription).toBe("JD content");
+    expect(snap.context.cv).toBeUndefined();
   });
 
-  it("rejects empty PROVIDE_TEXT (guard)", () => {
+  it("PROVIDE_CV from idle auto-starts screening with CV set", () => {
     const actor = makeActor();
     actor.start();
-    actor.send({ type: "START_SCREENING" });
+    actor.send({ type: "PROVIDE_CV", text: "CV content" });
+    const snap = actor.getSnapshot();
+    expect(snap.value).toEqual({ screening: "gathering" });
+    expect(snap.context.cv).toBe("CV content");
+    expect(snap.context.jobDescription).toBeUndefined();
+  });
+
+  it("PROVIDE_TEXT from idle fills the JD slot first", () => {
+    const actor = makeActor();
+    actor.start();
+    actor.send({ type: "PROVIDE_TEXT", text: "ambiguous content" });
+    const snap = actor.getSnapshot();
+    expect(snap.value).toEqual({ screening: "gathering" });
+    expect(snap.context.jobDescription).toBe("ambiguous content");
+    expect(snap.context.cv).toBeUndefined();
+  });
+
+  it("rejects empty PROVIDE_TEXT (guard) — stays in idle", () => {
+    const actor = makeActor();
+    actor.start();
     actor.send({ type: "PROVIDE_TEXT", text: "   " });
-    expect(actor.getSnapshot().value).toEqual({
-      screening: "awaitingJobDescription",
-    });
+    expect(actor.getSnapshot().value).toBe("idle");
   });
 
-  it("full screening flow: JD → CV → evaluating → presentingResult", async () => {
+  it("full screening flow (JD then CV): both → evaluating → presentingResult", async () => {
     const actor = makeActor();
     actor.start();
     actor.send({ type: "START_SCREENING" });
-    actor.send({ type: "PROVIDE_TEXT", text: "JD" });
-    actor.send({ type: "PROVIDE_TEXT", text: "CV" });
+    actor.send({ type: "PROVIDE_JD", text: "JD" });
+    expect(actor.getSnapshot().value).toEqual({ screening: "gathering" });
+    expect(actor.getSnapshot().context.jobDescription).toBe("JD");
+
+    actor.send({ type: "PROVIDE_CV", text: "CV" });
+    // After both slots are filled, `always` advances to evaluating.
     expect(actor.getSnapshot().value).toEqual({ screening: "evaluating" });
+
     const final = await waitFor(
       actor,
       (s) => s.matches({ screening: "presentingResult" }),
-      {
-        timeout: 1000,
-      },
+      { timeout: 1000 },
     );
     expect(final.context.result).toEqual(FAKE_RESULT);
   });
 
-  it("returns to idle on /cancel from awaitingJobDescription", () => {
+  it("upload-first flow (CV then JD): both → evaluating → presentingResult", async () => {
+    const actor = makeActor();
+    actor.start();
+    actor.send({ type: "PROVIDE_CV", text: "CV" });
+    expect(actor.getSnapshot().value).toEqual({ screening: "gathering" });
+    expect(actor.getSnapshot().context.cv).toBe("CV");
+
+    actor.send({ type: "PROVIDE_JD", text: "JD" });
+    expect(actor.getSnapshot().value).toEqual({ screening: "evaluating" });
+
+    const final = await waitFor(
+      actor,
+      (s) => s.matches({ screening: "presentingResult" }),
+      { timeout: 1000 },
+    );
+    expect(final.context.result).toEqual(FAKE_RESULT);
+  });
+
+  it("PROVIDE_TEXT in gathering fills missing slot then evaluates", async () => {
+    const actor = makeActor();
+    actor.start();
+    actor.send({ type: "PROVIDE_CV", text: "CV first" });
+    actor.send({ type: "PROVIDE_TEXT", text: "ambiguous JD" });
+    // CV is set so PROVIDE_TEXT fills JD, then `always` runs evaluation.
+    expect(actor.getSnapshot().value).toEqual({ screening: "evaluating" });
+    expect(actor.getSnapshot().context.jobDescription).toBe("ambiguous JD");
+    expect(actor.getSnapshot().context.cv).toBe("CV first");
+  });
+
+  it("returns to idle on /cancel from gathering", () => {
     const actor = makeActor();
     actor.start();
     actor.send({ type: "START_SCREENING" });
@@ -107,11 +157,10 @@ describe("botMachine", () => {
     expect(actor.getSnapshot().context.jobDescription).toBeUndefined();
   });
 
-  it("returns to idle on /cancel from awaitingCv (clearing JD)", () => {
+  it("returns to idle on /cancel from gathering after JD provided (clearing JD)", () => {
     const actor = makeActor();
     actor.start();
-    actor.send({ type: "START_SCREENING" });
-    actor.send({ type: "PROVIDE_TEXT", text: "JD" });
+    actor.send({ type: "PROVIDE_JD", text: "JD" });
     actor.send({ type: "CANCEL" });
     const snap = actor.getSnapshot();
     expect(snap.value).toBe("idle");
@@ -127,6 +176,16 @@ describe("botMachine", () => {
     expect(actor.getSnapshot().value).toBe("idle");
   });
 
+  it("/screen mid-gather is a no-op (preserves uploaded slots)", () => {
+    const actor = makeActor();
+    actor.start();
+    actor.send({ type: "PROVIDE_CV", text: "CV" });
+    actor.send({ type: "START_SCREENING" });
+    const snap = actor.getSnapshot();
+    expect(snap.value).toEqual({ screening: "gathering" });
+    expect(snap.context.cv).toBe("CV");
+  });
+
   it("handles screening actor failure: returns to idle with error captured", async () => {
     const actor = makeActor({
       screenImpl: async () => {
@@ -134,9 +193,8 @@ describe("botMachine", () => {
       },
     });
     actor.start();
-    actor.send({ type: "START_SCREENING" });
-    actor.send({ type: "PROVIDE_TEXT", text: "JD" });
-    actor.send({ type: "PROVIDE_TEXT", text: "CV" });
+    actor.send({ type: "PROVIDE_JD", text: "JD" });
+    actor.send({ type: "PROVIDE_CV", text: "CV" });
     const final = await waitFor(actor, (s) => s.value === "idle", {
       timeout: 1000,
     });
@@ -148,24 +206,44 @@ describe("botMachine", () => {
   it("allows starting a new screening from presentingResult", async () => {
     const actor = makeActor();
     actor.start();
-    actor.send({ type: "START_SCREENING" });
-    actor.send({ type: "PROVIDE_TEXT", text: "JD1" });
-    actor.send({ type: "PROVIDE_TEXT", text: "CV1" });
+    actor.send({ type: "PROVIDE_JD", text: "JD1" });
+    actor.send({ type: "PROVIDE_CV", text: "CV1" });
     await waitFor(actor, (s) => s.matches({ screening: "presentingResult" }), {
       timeout: 1000,
     });
     actor.send({ type: "START_SCREENING" });
     const snap = actor.getSnapshot();
-    expect(snap.value).toEqual({ screening: "awaitingJobDescription" });
+    expect(snap.value).toEqual({ screening: "gathering" });
     expect(snap.context.result).toBeUndefined();
+    expect(snap.context.jobDescription).toBeUndefined();
+    expect(snap.context.cv).toBeUndefined();
+  });
+
+  it("returns to idle on /reset from gathering", () => {
+    const actor = makeActor();
+    actor.start();
+    actor.send({ type: "START_SCREENING" });
+    actor.send({ type: "RESET" });
+    expect(actor.getSnapshot().value).toBe("idle");
+    expect(actor.getSnapshot().context.jobDescription).toBeUndefined();
+  });
+
+  it("returns to idle on /reset from gathering after JD provided", () => {
+    const actor = makeActor();
+    actor.start();
+    actor.send({ type: "PROVIDE_JD", text: "JD" });
+    actor.send({ type: "RESET" });
+    const snap = actor.getSnapshot();
+    expect(snap.value).toBe("idle");
+    expect(snap.context.jobDescription).toBeUndefined();
+    expect(snap.context.cv).toBeUndefined();
   });
 
   it("RESET from presentingResult goes back to idle and clears context", async () => {
     const actor = makeActor();
     actor.start();
-    actor.send({ type: "START_SCREENING" });
-    actor.send({ type: "PROVIDE_TEXT", text: "JD" });
-    actor.send({ type: "PROVIDE_TEXT", text: "CV" });
+    actor.send({ type: "PROVIDE_JD", text: "JD" });
+    actor.send({ type: "PROVIDE_CV", text: "CV" });
     await waitFor(actor, (s) => s.matches({ screening: "presentingResult" }), {
       timeout: 1000,
     });
@@ -178,8 +256,7 @@ describe("botMachine", () => {
   it("persists and rehydrates a snapshot mid-flow", () => {
     const a = makeActor();
     a.start();
-    a.send({ type: "START_SCREENING" });
-    a.send({ type: "PROVIDE_TEXT", text: "JD-frozen" });
+    a.send({ type: "PROVIDE_JD", text: "JD-frozen" });
     const snapshot = a.getPersistedSnapshot();
     a.stop();
 
@@ -196,7 +273,7 @@ describe("botMachine", () => {
       { input: { conversationId: "test-convo" }, snapshot },
     );
     b.start();
-    expect(b.getSnapshot().value).toEqual({ screening: "awaitingCv" });
+    expect(b.getSnapshot().value).toEqual({ screening: "gathering" });
     expect(b.getSnapshot().context.jobDescription).toBe("JD-frozen");
   });
 });

@@ -108,7 +108,29 @@ export async function sendPdfMessage(
     userMessage: `📎 ${file.name}`,
     content: text,
     attachment: { name: file.name, bytes: file.size },
+    docHint: inferDocType(file.name),
   });
+}
+
+/**
+ * Filename-based JD-vs-CV heuristic. Demo PDFs follow common naming:
+ * `cv-strong-match.pdf`, `resume_jane.pdf`, `senior-engineer-jd.pdf`,
+ * `job-description.pdf`. Returns `undefined` when ambiguous so the FSM's
+ * setMissing action can fill whichever slot is empty.
+ */
+function inferDocType(filename: string): "jd" | "cv" | undefined {
+  const lower = filename.toLowerCase();
+  if (/(^|[^a-z])(cv|resume|résumé|curriculum.?vitae)([^a-z]|$)/.test(lower)) {
+    return "cv";
+  }
+  if (
+    /(^|[^a-z])(jd|job.?description|job.?posting|posting|role)([^a-z]|$)/.test(
+      lower,
+    )
+  ) {
+    return "jd";
+  }
+  return undefined;
 }
 
 async function processInput(opts: {
@@ -116,6 +138,7 @@ async function processInput(opts: {
   userMessage: string;
   content: string;
   attachment?: { name: string; bytes: number };
+  docHint?: "jd" | "cv";
 }): Promise<ActionResult> {
   const intent = classifyIntent(opts.content);
 
@@ -134,7 +157,13 @@ async function processInput(opts: {
       event = { type: "RESET" };
       break;
     case "content":
-      event = { type: "PROVIDE_TEXT", text: intent.text };
+      if (opts.docHint === "cv") {
+        event = { type: "PROVIDE_CV", text: intent.text };
+      } else if (opts.docHint === "jd") {
+        event = { type: "PROVIDE_JD", text: intent.text };
+      } else {
+        event = { type: "PROVIDE_TEXT", text: intent.text };
+      }
       break;
   }
 

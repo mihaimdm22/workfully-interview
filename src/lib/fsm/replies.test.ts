@@ -8,15 +8,34 @@ describe("promptForState", () => {
     expect(reply).toMatch(/newjob/i);
   });
 
-  it("returns JD prompt for screening.awaitingJobDescription", () => {
-    const reply = promptForState({ screening: "awaitingJobDescription" });
+  it("gathering with nothing provided invites either JD or CV", () => {
+    const reply = promptForState(
+      { screening: "gathering" },
+      {
+        conversationId: "c",
+      },
+    );
     expect(reply).toMatch(/job description/i);
-    expect(reply).toMatch(/cancel/i);
+    expect(reply).toMatch(/CV/);
+    expect(reply).toMatch(/any order/i);
   });
 
-  it("returns CV prompt for screening.awaitingCv", () => {
-    const reply = promptForState({ screening: "awaitingCv" });
-    expect(reply).toMatch(/CV/i);
+  it("gathering with JD already provided asks for CV", () => {
+    const reply = promptForState(
+      { screening: "gathering" },
+      { conversationId: "c", jobDescription: "JD" },
+    );
+    expect(reply).toMatch(/got the/i);
+    expect(reply).toMatch(/CV/);
+  });
+
+  it("gathering with CV already provided asks for JD", () => {
+    const reply = promptForState(
+      { screening: "gathering" },
+      { conversationId: "c", cv: "CV" },
+    );
+    expect(reply).toMatch(/got the/i);
+    expect(reply).toMatch(/job description/i);
   });
 
   it("returns evaluating prompt for screening.evaluating", () => {
