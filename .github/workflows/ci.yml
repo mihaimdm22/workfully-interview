@@ -48,6 +48,16 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:coverage
+      # Upload coverage to Codecov. Requires CODECOV_TOKEN secret in repo
+      # settings (free for public repos). The action is a no-op if the
+      # token is missing, so PRs from forks won't fail here.
+      - name: Upload coverage
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/lcov.info
+          fail_ci_if_error: false
 
   build:
     name: Build
