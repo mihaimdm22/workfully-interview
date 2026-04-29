@@ -1,44 +1,46 @@
 import type { BotSnapshot } from "@/lib/fsm/snapshot";
 
-const LABELS: Record<
-  string,
-  { top: string; sub?: string; tone: "idle" | "screening" | "job" }
-> = {
-  idle: { top: "IDLE", tone: "idle" },
-  jobBuilder: { top: "JOB_BUILDER", sub: "mocked", tone: "job" },
-  "screening.awaitingJobDescription": {
-    top: "SCREENING",
-    sub: "awaiting JD",
-    tone: "screening",
-  },
-  "screening.awaitingCv": {
-    top: "SCREENING",
-    sub: "awaiting CV",
-    tone: "screening",
-  },
-  "screening.evaluating": {
-    top: "SCREENING",
-    sub: "evaluating…",
-    tone: "screening",
-  },
-  "screening.presentingResult": {
-    top: "SCREENING",
-    sub: "verdict ready",
-    tone: "screening",
-  },
-};
+type Tone = "idle" | "screening" | "job";
 
-function describe(value: BotSnapshot["value"]): {
-  top: string;
-  sub?: string;
-  tone: "idle" | "screening" | "job";
-} {
-  if (typeof value === "string")
-    return LABELS[value] ?? { top: String(value).toUpperCase(), tone: "idle" };
+const STATIC_LABELS: Record<string, { top: string; sub?: string; tone: Tone }> =
+  {
+    idle: { top: "IDLE", tone: "idle" },
+    jobBuilder: { top: "JOB_BUILDER", sub: "mocked", tone: "job" },
+    "screening.evaluating": {
+      top: "SCREENING",
+      sub: "evaluating…",
+      tone: "screening",
+    },
+    "screening.presentingResult": {
+      top: "SCREENING",
+      sub: "verdict ready",
+      tone: "screening",
+    },
+  };
+
+function describe(
+  value: BotSnapshot["value"],
+  context?: BotSnapshot["context"],
+): { top: string; sub?: string; tone: Tone } {
+  if (typeof value === "string") {
+    return (
+      STATIC_LABELS[value] ?? { top: String(value).toUpperCase(), tone: "idle" }
+    );
+  }
   if ("screening" in value) {
+    // The dynamic sub-label for `gathering` reflects what the bot is still
+    // missing — kept in sync with replies.ts so the pill and the chat agree.
+    if (value.screening === "gathering") {
+      const hasJd = !!context?.jobDescription?.trim();
+      const hasCv = !!context?.cv?.trim();
+      let sub = "awaiting JD or CV";
+      if (hasJd && !hasCv) sub = "awaiting CV";
+      else if (hasCv && !hasJd) sub = "awaiting JD";
+      return { top: "SCREENING", sub, tone: "screening" };
+    }
     const key = `screening.${value.screening}`;
     return (
-      LABELS[key] ?? {
+      STATIC_LABELS[key] ?? {
         top: "SCREENING",
         sub: String(value.screening),
         tone: "screening",
@@ -48,8 +50,14 @@ function describe(value: BotSnapshot["value"]): {
   return { top: "IDLE", tone: "idle" };
 }
 
-export function StatePill({ value }: { value: BotSnapshot["value"] }) {
-  const { top, sub, tone } = describe(value);
+export function StatePill({
+  value,
+  context,
+}: {
+  value: BotSnapshot["value"];
+  context?: BotSnapshot["context"];
+}) {
+  const { top, sub, tone } = describe(value, context);
   const ringColor =
     tone === "screening"
       ? "ring-accent/40 bg-accent/10 text-accent"

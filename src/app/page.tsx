@@ -18,6 +18,7 @@ export default async function Home() {
     loadConversation(conversationId),
   ]);
   const stateValue = loaded?.state ?? "idle";
+  const stateContext = loaded?.context;
   const resultByMessageId = pairScreeningsToMessages(messages, screenings);
 
   return (
@@ -32,7 +33,7 @@ export default async function Home() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <StatePill value={stateValue} />
+          <StatePill value={stateValue} context={stateContext} />
           <ResetButton />
         </div>
       </header>

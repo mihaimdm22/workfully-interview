@@ -7,10 +7,14 @@ import type { ScreeningResult } from "@/lib/domain/screening";
  * that hosted it.
  *
  * The orchestrator inserts the screenings row before appending the
- * verdict-ready bot reply, so the first bot message with createdAt strictly
- * after a given screening's createdAt is the one that should display its
- * card. Walking once keeps the pairing O(N+M) and lets historical cards
- * survive later FSM transitions that clear `context.result`.
+ * verdict-ready bot reply, so the first bot message at-or-after a given
+ * screening's createdAt is the one that should display its card. We use
+ * `>=` rather than strict `>` because Postgres stores microseconds but the
+ * JS `Date` round-trip rounds to milliseconds — when the two inserts land
+ * within the same millisecond the timestamps collide, and a strict `>`
+ * silently drops the pairing. Walking once keeps the pairing O(N+M) and
+ * lets historical cards survive later FSM transitions that clear
+ * `context.result`.
  */
 export function pairScreeningsToMessages(
   messages: Pick<Message, "id" | "role" | "createdAt">[],
@@ -22,7 +26,7 @@ export function pairScreeningsToMessages(
     if (
       m.role === "bot" &&
       scrIdx < screenings.length &&
-      m.createdAt > screenings[scrIdx]!.createdAt
+      m.createdAt >= screenings[scrIdx]!.createdAt
     ) {
       result.set(m.id, screenings[scrIdx]!.result);
       scrIdx++;

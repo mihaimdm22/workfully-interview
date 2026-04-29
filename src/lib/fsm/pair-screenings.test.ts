@@ -84,6 +84,24 @@ describe("pairScreeningsToMessages", () => {
     expect(out.get("b1")?.score).toBe(90);
   });
 
+  it("pairs when the bot message and screening land at the exact same millisecond", () => {
+    // Postgres stores microseconds; a JS Date round-trip rounds to the
+    // millisecond, so a screening recorded ~700µs before its announcement
+    // can collapse to an equal createdAt. The pairing must still attach.
+    const sameMs = new Date(2026, 0, 1, 0, 0, 5);
+    const messages = [
+      {
+        id: "u1",
+        role: "user" as const,
+        createdAt: new Date(2026, 0, 1, 0, 0, 4),
+      },
+      { id: "b-verdict", role: "bot" as const, createdAt: sameMs },
+    ];
+    const screenings = [{ result: makeResult(72), createdAt: sameMs }];
+    const out = pairScreeningsToMessages(messages, screenings);
+    expect(out.get("b-verdict")?.score).toBe(72);
+  });
+
   it("ignores bot messages that predate every screening", () => {
     // Greeting bot message before any screening exists must stay bare.
     const messages = [msg("greet", "bot", 1), msg("verdict", "bot", 5)];
