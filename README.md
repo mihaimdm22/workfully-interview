@@ -9,13 +9,19 @@
 </p>
 
 A conversational, FSM-driven candidate screening bot built for the Workfully technical
-challenge. The user can chat with the bot to:
+challenge. Chat with the bot, get a structured fit verdict, share it as a public link or
+PDF. The whole thing lives behind a workspace shell — sidebar with recent screenings,
+dashboard at `/`, permanent URLs per verdict, ⌘K search.
 
 1. **Idle** — get a greeting and a list of commands.
-2. **Screening** — paste / upload a Job Description and a CV, get a structured fit verdict.
+2. **Screening** — paste / upload a Job Description and a CV, watch the verdict stream in.
 3. **Job Builder** — mocked, returns to idle.
 
-The original challenge brief lives in [`docs/CHALLENGE.md`](./docs/CHALLENGE.md).
+Verdicts get a permanent page at `/screening/[id]`, an unguessable public share at
+`/s/[slug]`, an Open Graph card image, and a server-rendered Chromium PDF.
+
+The original challenge brief lives in [`docs/CHALLENGE.md`](./docs/CHALLENGE.md). The
+visual contract lives in [`DESIGN.md`](./DESIGN.md).
 
 ---
 
@@ -54,13 +60,24 @@ codepath that CI runs for E2E.
   imports). Tests use a fake actor that returns a fixture; production wires up the
   real LLM call (Claude via OpenRouter). Same machine, two contexts.
 - **Structured output, not string parsing.** The screening verdict is generated via
-  `generateObject` against a Zod schema (`src/lib/domain/screening.ts`). If the model
-  can't produce schema-valid JSON, the SDK retries automatically and the actor either
-  succeeds with a typed object or throws to the FSM's error path. We never parse
-  free-text.
+  `generateObject` (or `streamObject` for streaming) against a Zod schema
+  (`src/lib/domain/screening.ts`). If the model can't produce schema-valid JSON, the
+  SDK retries automatically and the actor either succeeds with a typed object or
+  throws to the FSM's error path. We never parse free-text.
+- **Streaming verdicts via SSE.** `screenStreaming()` wraps `streamObject` and emits
+  partial verdicts through an `onPartial` callback. The orchestrator's
+  `dispatchStreaming()` threads it through, the route handler at
+  `/api/screening/stream` returns `text/event-stream`, and `<ChatStream>` consumes it
+  client-side. Fake-AI mode emits 11 timed partials over ~2.5s so demos show the same
+  shape without burning OpenRouter credits.
 - **Persisted snapshots = resumable conversations.** Every transition writes the
   XState `PersistedSnapshot` to Postgres. A page reload rehydrates the actor at
   exactly the state it left off in.
+- **Public share by design, private by default.** A verdict gets a permanent
+  `/screening/[id]` page (private) and an opt-in `/s/[slug]` page (public). The
+  privacy boundary is enforced by TypeScript: the public path uses
+  `getScreeningForShare` which returns a narrower type that omits JD, CV, and the
+  conversation log — no accidental leak through a careless render.
 - **One FSM-shaped E2E test, the AI is faked.** `WORKFULLY_FAKE_AI=1` swaps the real
   `screen()` call for a deterministic stub. CI runs Playwright against this. Real
   model behavior is covered by the schema-validated unit tests on the screening
@@ -77,9 +94,12 @@ codepath that CI runs for E2E.
 | Database    | Postgres 17 + Drizzle ORM                                                 | [0003](./docs/adr/0003-database.md)                 |
 | Concurrency | Optimistic CAS (per-conversation `version` column)                        | [0006](./docs/adr/0006-orchestrator-concurrency.md) |
 | AI          | Vercel AI SDK v6 + Claude Sonnet 4.6 via OpenRouter                       | [0004](./docs/adr/0004-ai-and-structured-output.md) |
+| Streaming   | `streamObject` + SSE route handler (`/api/screening/stream`)              | [0004](./docs/adr/0004-ai-and-structured-output.md) |
 | Validation  | Zod v4 (single source of truth: schema → types → JSON schema for the LLM) | —                                                   |
 | Testing     | Vitest (unit) + Testcontainers (integration) + Playwright (E2E, fake AI)  | [0005](./docs/adr/0005-testing-strategy.md)         |
-| Style       | Tailwind CSS 4                                                            | —                                                   |
+| Style       | Tailwind CSS 4 (`@theme inline` tokens, utility-class refactor)           | [DESIGN.md](./DESIGN.md)                            |
+| PDF export  | `puppeteer-core` + `@sparticuz/chromium` (server-side render)             | —                                                   |
+| OG image    | `next/og` at `/s/[slug]/opengraph-image`                                  | —                                                   |
 | Lang        | TypeScript 6 strict + `noUncheckedIndexedAccess`                          | —                                                   |
 
 All versions are the latest stable as of April 2026.
@@ -124,46 +144,76 @@ The full hierarchy and transition table lives in
 
 ```
 src/
-├── app/                    # Next.js App Router
-│   ├── actions.ts          # Server Actions — the only mutation surface
-│   ├── layout.tsx
-│   ├── page.tsx            # Server Component, renders chat from DB
-│   └── globals.css
-├── components/             # UI components (one client island in composer.tsx)
-│   ├── composer.tsx        # client: input + file picker + form submit
+├── app/                            # Next.js App Router
+│   ├── actions.ts                  # Server Actions — the only mutation surface
+│   ├── layout.tsx                  # Root: theme bootstrap, font loading
+│   ├── globals.css                 # Tailwind 4 @theme tokens, design vars
+│   ├── (workspace)/                # Workspace shell route group (sidebar + topbar)
+│   │   ├── layout.tsx              # Shell — Sidebar + Topbar + CmdKPalette
+│   │   ├── page.tsx                # Dashboard (`/`) — screening cards + filter tabs
+│   │   └── screening/
+│   │       ├── new/page.tsx        # Active chat (`/screening/new`)
+│   │       └── [id]/page.tsx       # Permanent verdict page (`/screening/[id]`)
+│   ├── s/                          # Public share (no shell)
+│   │   ├── layout.tsx              # Bare layout — no sidebar leak
+│   │   └── [slug]/
+│   │       ├── page.tsx            # Public verdict (`/s/[slug]`)
+│   │       ├── opengraph-image.tsx # 1200×630 OG card via next/og
+│   │       └── pdf/
+│   │           ├── page.tsx        # Print HTML (used by Chromium)
+│   │           └── download/route.ts  # Headless Chromium → A4 PDF
+│   └── api/screening/stream/route.ts  # SSE — streaming verdicts
+├── components/                     # UI
+│   ├── shell/                      # Workspace chrome
+│   │   ├── sidebar.tsx             # Brand + recents + workspace footer
+│   │   └── topbar.tsx              # Breadcrumbs + ⌘K input + theme toggle
+│   ├── ui/                         # Primitives (Pill, IconButton, ScoreDisplay)
+│   ├── chat-stream.tsx             # client: SSE consumer, optimistic render
+│   ├── streaming-verdict.tsx       # Progressive verdict reveal during stream
+│   ├── verdict-header.tsx          # Detail-page header — score + meta
+│   ├── requirement-list.tsx        # Must-haves + nice-to-haves
+│   ├── bullet-block.tsx            # Strengths / gaps two-column
+│   ├── recommendation.tsx          # Slack-paste block + copy button
+│   ├── share-row.tsx               # "Generate share link"
+│   ├── screening-card.tsx          # Dashboard card
+│   ├── cmd-k-palette.tsx           # ⌘K search palette
+│   ├── theme-toggle.tsx            # Light/dark with localStorage
 │   ├── message-bubble.tsx
-│   ├── screening-result-card.tsx
-│   ├── state-pill.tsx
-│   └── quick-actions.tsx
+│   ├── screening-result-card.tsx   # In-chat verdict card
+│   └── state-pill.tsx
 └── lib/
-    ├── domain/             # Pure types & rules — no I/O
-    │   ├── intent.ts       # text → FSM event classifier
-    │   ├── intent.test.ts
-    │   └── screening.ts    # Zod schema for the verdict
-    ├── fsm/                # XState machine + orchestrator
-    │   ├── machine.ts      # the state machine itself (pure)
-    │   ├── machine.test.ts
-    │   ├── orchestrator.ts # bridges FSM ↔ DB ↔ AI (server-only)
-    │   ├── replies.ts      # state → bot prompt
-    │   ├── replies.test.ts
-    │   └── snapshot.ts     # zod-validated PersistedSnapshot
-    ├── db/                 # Drizzle layer
-    │   ├── schema.ts
-    │   ├── client.ts       # lazy singleton, dev-HMR safe
-    │   ├── repositories.ts # the only place app code touches SQL
-    │   ├── migrate.ts
-    │   └── migrations/     # generated by drizzle-kit
-    ├── ai/                 # AI boundary
-    │   ├── screen.ts       # generateObject + Zod
-    │   ├── screen.test.ts  # uses MockLanguageModelV3
-    │   └── extract-pdf.ts  # PDF → text via unpdf
-    └── cookies.ts          # conversation cookie helpers
+    ├── domain/                     # Pure types & rules — no I/O
+    │   ├── intent.ts               # text → FSM event classifier
+    │   ├── screening.ts            # Zod schema for the verdict
+    │   ├── verdict-style.ts        # Single source of truth for verdict colors
+    │   └── fuzzy-match.ts          # 30-line scorer powering ⌘K
+    ├── fsm/                        # XState machine + orchestrator
+    │   ├── machine.ts              # The state machine itself (pure)
+    │   ├── orchestrator.ts         # FSM ↔ DB ↔ AI bridge (server-only)
+    │   ├── replies.ts              # state → bot prompt
+    │   ├── pair-screenings.ts      # Pairs verdicts to messages in O(N+M)
+    │   └── snapshot.ts             # zod-validated PersistedSnapshot
+    ├── db/                         # Drizzle layer
+    │   ├── schema.ts               # conversations, messages, screenings, share_links
+    │   ├── client.ts               # Lazy singleton, dev-HMR safe
+    │   ├── repositories.ts         # Public/private split: getScreeningById vs
+    │   │                           #   getScreeningForShare (narrower type)
+    │   ├── connection-string.ts    # DATABASE_URL fallback chain
+    │   └── migrations/             # Generated by drizzle-kit
+    ├── ai/                         # AI boundary
+    │   ├── screen.ts               # generateObject + streamObject + Zod
+    │   └── extract-pdf.ts          # PDF → text via unpdf
+    ├── pdf/
+    │   └── browser.ts              # puppeteer-core + @sparticuz/chromium launcher
+    ├── log.ts                      # Request-scoped structured logger
+    └── cookies.ts                  # Conversation cookie helpers
 e2e/
-└── screening.spec.ts       # Playwright happy-path
-fixtures/                   # Sample JD + 3 CVs (strong / weak / wrong-role)
+└── screening.spec.ts               # Playwright — dashboard + new chat + share round-trip
+fixtures/                           # Sample JD + 3 CVs (strong / weak / wrong-role)
 docs/
-├── CHALLENGE.md            # The original brief
-└── adr/                    # Architecture Decision Records
+├── CHALLENGE.md                    # The original brief
+└── adr/                            # Architecture Decision Records (0001–0006)
+DESIGN.md                           # Design system — tokens, components, a11y
 ```
 
 The `lib/` layout follows a strict dependency order:
@@ -194,7 +244,7 @@ plain terms:
 | Repositories | (Postgres integration)             | Not implemented — would use Testcontainers in CI; the pattern is here                |
 | End-to-end   | Playwright + `WORKFULLY_FAKE_AI=1` | UI wiring, FSM transitions visible to the user                                       |
 
-59 unit tests, all green; coverage thresholds enforced (≥80% statements/functions/lines, ≥75% branches; current ~95%).
+All unit tests green; coverage thresholds enforced (≥80% statements/functions/lines, ≥75% branches; current ~95%). One drift test (`verdict-style.test.ts`) reads `globals.css` at runtime and asserts every CSS variable matches the constants in `verdict-style.ts` — the build fails if `DESIGN.md` and the runtime tokens diverge.
 
 ```bash
 pnpm test          # Vitest, ~200 ms
@@ -236,7 +286,7 @@ docs(adr): add ADR 0006 explaining streaming verdicts
 chore(deps): bump xstate to 5.32.0
 ```
 
-Allowed scopes: `fsm`, `ai`, `db`, `ui`, `domain`, `e2e`, `ci`, `deps`, `docs`, `config`.
+Allowed scopes: `fsm`, `ai`, `db`, `ui`, `domain`, `e2e`, `ci`, `deps`, `docs`, `config`, `orchestrator`, `proxy`, `actions`, `log`.
 
 ---
 
@@ -246,13 +296,21 @@ Allowed scopes: `fsm`, `ai`, `db`, `ui`, `domain`, `e2e`, `ci`, `deps`, `docs`, 
 2. `pnpm db:up && pnpm db:migrate`
 3. Copy `.env.example` to `.env` and add your `OPENROUTER_API_KEY`.
 4. `pnpm dev`
-5. Open http://localhost:3000.
-6. Type `/screen`, paste a JD (try copying from `fixtures/job-description.pdf`),
-   then paste a CV (try `cv-strong-match.pdf` for a high-confidence verdict, or
-   `cv-wrong-role.pdf` for a wrong-role rejection).
+5. Open http://localhost:3000 — you land on the dashboard. Empty on first run.
+6. Click **+ New screening** in the sidebar (or hit ⌘K and pick "New screening")
+   to land on `/screening/new`. Type `/screen`, paste a JD (try
+   `fixtures/job-description.pdf`), then a CV (`cv-strong-match.pdf` for a
+   high-confidence verdict, or `cv-wrong-role.pdf` for a wrong-role rejection).
+7. Watch the verdict stream in. When it lands, you redirect to a permanent
+   `/screening/[id]` page. Click **Generate share link** to mint a public
+   `/s/[slug]` URL — paste it into Slack to see the OG card unfurl, or click
+   the PDF icon on the share page to download an A4 print.
+8. Back on the dashboard, your screening appears as a card. Use the tab strip
+   to filter by verdict tier.
 
 Other commands the bot understands: `/newjob`, `/cancel`, `/reset`,
 or natural-language equivalents (`screen a candidate`, `start over`, `stop`).
+⌘K (or Ctrl-K) opens the search palette from anywhere.
 
 ---
 
@@ -308,13 +366,62 @@ surfaces, Codecov upload, CI gating fix so e2e waits for unit tests to pass,
 Postgres connection-pool size that branches on `process.env.VERCEL`, and
 explicit fixture markers for the fake-AI test escape hatch.
 
+## What shipped on day three
+
+After the audit shipped, the chat at `/` started feeling like a tech demo, not a
+product. Day three was a platform redesign — turn the single-page chat into a
+workspace.
+
+**The routing model changed.** `/` is now the dashboard. The active chat lives at
+`/screening/new`. Every verdict gets a permanent URL at `/screening/[id]`. Public
+shares get an unguessable slug at `/s/[slug]` with its own bare layout (no sidebar
+leak), an Open Graph card at `/s/[slug]/opengraph-image`, and a server-rendered
+A4 PDF at `/s/[slug]/pdf/download` (headless Chromium via `puppeteer-core` +
+`@sparticuz/chromium`).
+
+**The verdict streams now.** `screenStreaming()` wraps `streamObject` and emits
+partials through an `onPartial` callback. `dispatchStreaming()` threads it through
+the orchestrator. `/api/screening/stream` is an SSE route that emits
+`user-message`, `partial`, `done`, and `error` events. `<ChatStream>` consumes the
+SSE response, optimistically renders the user message, progressively renders the
+verdict via `<StreamingVerdict>`, and `redirect`s to `/screening/[id]` when the
+stream closes. Fake-AI mode (`WORKFULLY_FAKE_AI=1`) emits 11 timed partials over
+~2.5s so demos show the streaming shape without burning OpenRouter credits.
+
+**TypeScript-enforced privacy boundary.** A new `share_links` table (128-bit
+unguessable slug, `ON DELETE CASCADE`, `UNIQUE` on `screening_id`) backs the
+public share. The repository layer splits into `getScreeningById` (private —
+returns JD + CV + transcript) and `getScreeningForShare` (public — returns a
+narrower type that omits all three). The public page literally cannot render JD
+or CV — TypeScript fails the build if you try.
+
+**Design system as a living document.** New `DESIGN.md` at the repo root captures
+tokens, component contracts, responsive breakpoints, a11y rules, motion, and
+dark-mode behavior. New `src/lib/domain/verdict-style.ts` is the single source of
+truth for verdict color mappings — used by the dashboard, sidebar dot, screening
+header, public share, OG card, and PDF page. A drift test reads `globals.css` and
+asserts every CSS variable matches the constants. CI fails if they diverge.
+
+**Tailwind 4 utility-first refactor.** Every component (~20 files) migrated from
+inline `style={{ ... }}` to Tailwind utility classes generated from `@theme inline`
+tokens. New utilities: `w-sidebar`, `h-header`, `shadow-pop`, `animate-fade-in`,
+`animate-scale-in`. Net: zero remaining inline styles outside the `@vercel/og`
+image route (which requires inline by design — `next/og` doesn't run Tailwind).
+
+**Other day-three bits.** ⌘K palette with a hand-rolled fuzzy-match scorer (30
+lines beats a 9 KB library at this scale). `ThemeToggle` with a tiny inline
+`<head>` script that sets `data-theme` before React hydrates — no flash of wrong
+theme on first paint. `candidateName` and `role` extracted by the model on the
+same AI call, so dashboard cards show real names instead of "Untitled screening".
+End-to-end coverage updated for the new routing: dashboard listing, public share
+access without sidebar, share-link round-trip.
+
 ## What I'd do with another day
 
-- **Streaming verdicts.** `streamObject` would let the user see the verdict take shape
-  in real time instead of staring at a spinner for ~10s.
-- **PDF storage.** Right now we extract text and discard the original bytes. If
-  recruiters need to re-download what the candidate uploaded, push the bytes to S3
-  and record a key.
+- **Uploaded-PDF storage.** Right now we extract text from JD/CV PDFs and discard
+  the original bytes. If recruiters need to re-download what the candidate uploaded,
+  push the bytes to S3 and record a key on the screening row. The verdict PDF (which
+  the share page generates) is rendered on demand from data — no storage needed.
 - **Screening replays.** The `screenings` table already stores JD + CV verbatim, so
   re-running an old verdict against a different model is just a worker job away.
 - **Multi-tenancy.** Every row would gain a `workspace_id`; cookies would carry it.
@@ -326,6 +433,8 @@ explicit fixture markers for the fake-AI test escape hatch.
 - **Broader repository integration tests.** W19' shipped one Testcontainers
   case for the CAS primitive; the rest of the repo layer would benefit from
   the same treatment now that the infrastructure is in place.
+- **Eval harness.** `pnpm eval` against a labeled fixture set, run on every prompt
+  change. That's how you measure verdict quality without unit-testing the model.
 - **Job Builder for real.** Today it returns a mock prompt — implementing it with
   the same FSM-as-source-of-truth approach would mirror the screening flow.
 
