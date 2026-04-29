@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { verdictStyle } from "./verdict-style";
+import { styleFor, verdictStyle } from "./verdict-style";
 
 /**
  * Drift guard: the constants in verdict-style.ts must match the CSS variables
@@ -35,4 +35,14 @@ describe("verdict-style ↔ globals.css drift", () => {
       expect(css).toBe(s.color);
     });
   }
+});
+
+describe("styleFor", () => {
+  it("returns the matching record for every verdict", () => {
+    for (const verdict of Object.keys(verdictStyle) as Array<
+      keyof typeof verdictStyle
+    >) {
+      expect(styleFor(verdict)).toBe(verdictStyle[verdict]);
+    }
+  });
 });
