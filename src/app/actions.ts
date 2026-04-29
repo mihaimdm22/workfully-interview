@@ -10,7 +10,11 @@ import {
 import { classifyIntent } from "@/lib/domain/intent";
 import { extractPdfText } from "@/lib/ai/extract-pdf";
 import { clearConversationCookie, getConversationCookie } from "@/lib/cookies";
-import { ConcurrentModificationError } from "@/lib/db/repositories";
+import {
+  ConcurrentModificationError,
+  getOrCreateShareLink,
+  getScreeningById,
+} from "@/lib/db/repositories";
 import type { BotEvent } from "@/lib/fsm/machine";
 
 const MAX_TEXT_LENGTH = 30_000;
@@ -39,13 +43,48 @@ export async function ensureConversation(): Promise<string> {
   }
   const existing = await loadConversation(cookieId);
   if (existing) return cookieId;
-  await startConversation(cookieId);
+  try {
+    await startConversation(cookieId);
+  } catch (err) {
+    // Layout + page render in parallel and both call ensureConversation. Both
+    // see no existing row, both try to insert. The second insert hits the
+    // primary-key constraint — that's fine, it means the other branch won the
+    // race and already created the row. Treat as success on duplicate-key.
+    //
+    // Drizzle wraps the underlying postgres error inside a DrizzleQueryError;
+    // unwrap via .cause and check the postgres SQLSTATE code (23505 = unique
+    // violation). Fall back to message-string sniffing for safety.
+    const cause = (err as { cause?: { code?: string } }).cause;
+    const msg = err instanceof Error ? err.message : String(err);
+    const isDuplicate =
+      cause?.code === "23505" ||
+      msg.includes("duplicate key") ||
+      msg.includes("conversations_pkey") ||
+      msg.includes("23505");
+    if (!isDuplicate) throw err;
+  }
   return cookieId;
 }
 
 export async function resetConversation(): Promise<void> {
   await clearConversationCookie();
   redirect("/");
+}
+
+/**
+ * Generate (or fetch) the public share-link slug for a screening. Auth-gated:
+ * the screening must belong to the calling cookie's conversation.
+ */
+export async function createShareLink(
+  screeningId: string,
+): Promise<{ ok: true; slug: string } | { ok: false; error: string }> {
+  const conversationId = await ensureConversation();
+  const screening = await getScreeningById(screeningId, conversationId);
+  if (!screening) {
+    return { ok: false, error: "Screening not found" };
+  }
+  const link = await getOrCreateShareLink(screening.id);
+  return { ok: true, slug: link.slug };
 }
 
 export async function sendTextMessage(
@@ -106,7 +145,7 @@ export async function sendPdfMessage(
 
   return processInput({
     conversationId,
-    userMessage: `📎 ${file.name}`,
+    userMessage: `Uploaded ${file.name}`,
     content: text,
     attachment: { name: file.name, bytes: file.size },
     docHint: inferDocType(file.name),
@@ -168,13 +207,19 @@ async function processInput(opts: {
       break;
   }
 
+  let redirectTo: string | undefined;
   try {
-    await dispatch({
+    const result = await dispatch({
       conversationId: opts.conversationId,
       event,
       userMessage: opts.userMessage,
       attachment: opts.attachment,
     });
+    // When a verdict just landed, redirect from the active /screening/new
+    // composer to the now-permanent /screening/[id] artifact page.
+    if (result.newScreeningId) {
+      redirectTo = `/screening/${result.newScreeningId}`;
+    }
   } catch (err) {
     // Map typed errors to product strings the user can act on. Anything
     // unknown surfaces the raw message — not great UX, but better than
@@ -192,6 +237,11 @@ async function processInput(opts: {
     };
   }
 
-  revalidatePath("/");
+  // Revalidate every workspace surface that lists screenings so the new row
+  // shows up in the sidebar + dashboard immediately.
+  revalidatePath("/", "layout");
+  if (redirectTo) {
+    redirect(redirectTo);
+  }
   return { ok: true };
 }
