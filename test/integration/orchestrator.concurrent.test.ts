@@ -40,9 +40,10 @@ const baseSnapshot = (conversationId: string): PersistedSnapshot => ({
 
 beforeAll(async () => {
   container = await new PostgreSqlContainer("postgres:17-alpine").start();
-  process.env.DATABASE_URL = container.getConnectionUri();
+  const url = container.getConnectionUri();
+  process.env.DATABASE_URL = url;
 
-  const adminClient = postgres(process.env.DATABASE_URL, { max: 1 });
+  const adminClient = postgres(url, { max: 1 });
   try {
     const db = drizzle(adminClient);
     await migrate(db, { migrationsFolder: "src/lib/db/migrations" });
