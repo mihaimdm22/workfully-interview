@@ -39,6 +39,8 @@ export function proxy(request: NextRequest) {
     sameSite: "lax",
     path: "/",
     maxAge: CONVERSATION_COOKIE_MAX_AGE_S,
+    // Only over HTTPS in production. Dev still works on plain http://localhost.
+    secure: process.env.NODE_ENV === "production",
   });
   return response;
 }
