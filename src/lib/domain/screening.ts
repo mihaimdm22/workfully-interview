@@ -19,6 +19,11 @@ const requirementMatchSchema = z.object({
     ),
 });
 
+// Constraints (range, length, item counts) live in `.describe()` text and the
+// system prompt rather than as JSON-Schema keywords. OpenAI/Azure structured
+// outputs in strict mode reject `minimum`/`maximum`, `minLength`/`maxLength`,
+// and `minItems`/`maxItems`, so keeping them here would break OpenRouter's
+// promise of provider portability (ADR 0004). Shape + types are still enforced.
 export const screeningResultSchema = z.object({
   verdict: fitVerdictSchema.describe(
     'Overall categorization of fit. Use "wrong_role" only when the CV is for a different profession entirely.',
@@ -26,18 +31,19 @@ export const screeningResultSchema = z.object({
   score: z
     .number()
     .int()
-    .min(0)
-    .max(100)
-    .describe("Confidence score from 0 (no fit) to 100 (perfect fit)."),
+    .describe(
+      "Confidence score, integer from 0 (no fit) to 100 (perfect fit).",
+    ),
   summary: z
     .string()
-    .min(1)
-    .max(400)
-    .describe("Two-sentence summary of the candidate against the role."),
+    .describe(
+      "Two-sentence summary of the candidate against the role (max ~400 chars).",
+    ),
   mustHaves: z
     .array(requirementMatchSchema)
-    .min(1)
-    .describe("Each must-have requirement from the JD with match status."),
+    .describe(
+      "Each must-have requirement from the JD with match status. At least one entry.",
+    ),
   niceToHaves: z
     .array(requirementMatchSchema)
     .describe(
@@ -45,18 +51,14 @@ export const screeningResultSchema = z.object({
     ),
   strengths: z
     .array(z.string())
-    .max(5)
     .describe("Up to five concrete strengths the candidate brings."),
   gaps: z
     .array(z.string())
-    .max(5)
     .describe("Up to five concrete gaps relative to the role."),
   recommendation: z
     .string()
-    .min(1)
-    .max(300)
     .describe(
-      "One-sentence hiring recommendation a recruiter could paste into Slack.",
+      "One-sentence hiring recommendation a recruiter could paste into Slack (max ~300 chars).",
     ),
 });
 

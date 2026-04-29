@@ -2,6 +2,16 @@
 
 All notable changes to the Workfully Screening Bot will be documented in this file.
 
+## [0.1.2.0] - 2026-04-29
+
+### Fixed
+
+- **Strict-mode structured output compatibility.** Removed `min`/`max`/`minLength`/`maxLength`/`minItems` keywords from `screeningResultSchema` (`src/lib/domain/screening.ts`). OpenAI/Azure structured outputs reject these JSON Schema keywords in strict mode, which broke OpenRouter's promise of provider portability (ADR 0004). The same calibration is now expressed in `.describe()` text and the system prompt; shape and types are still enforced.
+
+### Added
+
+- **Interview presentation kit (`demo/`).** Marp-based 19-slide deck (`slides.md`), word-for-word walkthrough script (`walkthrough.md`), live-demo runbook (`demo.md`), and a rendered `slides.pptx` (4.5 MB) ready to drop into PowerPoint, Keynote, or Google Slides. Covers the FSM choice, structured-output AI, OpenRouter abstraction, testing pyramid, repo tooling, and how Claude Code was used in the build.
+
 ## [0.1.1.0] - 2026-04-29
 
 ### Changed
