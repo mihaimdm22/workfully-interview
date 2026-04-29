@@ -160,6 +160,27 @@ describe("botMachine", () => {
     expect(snap.context.result).toBeUndefined();
   });
 
+  it("returns to idle on /reset from awaitingJobDescription", () => {
+    const actor = makeActor();
+    actor.start();
+    actor.send({ type: "START_SCREENING" });
+    actor.send({ type: "RESET" });
+    expect(actor.getSnapshot().value).toBe("idle");
+    expect(actor.getSnapshot().context.jobDescription).toBeUndefined();
+  });
+
+  it("returns to idle on /reset from awaitingCv (clearing JD)", () => {
+    const actor = makeActor();
+    actor.start();
+    actor.send({ type: "START_SCREENING" });
+    actor.send({ type: "PROVIDE_TEXT", text: "JD" });
+    actor.send({ type: "RESET" });
+    const snap = actor.getSnapshot();
+    expect(snap.value).toBe("idle");
+    expect(snap.context.jobDescription).toBeUndefined();
+    expect(snap.context.cv).toBeUndefined();
+  });
+
   it("RESET from presentingResult goes back to idle and clears context", async () => {
     const actor = makeActor();
     actor.start();

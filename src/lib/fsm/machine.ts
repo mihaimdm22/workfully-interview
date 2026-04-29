@@ -11,7 +11,7 @@ import type { ScreeningResult } from "@/lib/domain/screening";
  *  │
  *  └─start_job_builder──▶  JOB_BUILDER ──cancel/reset──▶ IDLE
  *
- * `cancel` is accepted at any sub-state of SCREENING and JOB_BUILDER.
+ * `cancel` and `reset` are accepted at any sub-state of SCREENING and JOB_BUILDER.
  * The screening actor is provided externally (real AI in prod, mock in tests),
  * which keeps the machine pure and unit-testable.
  */
@@ -94,6 +94,7 @@ export const botMachine = setup({
       initial: "awaitingJobDescription",
       on: {
         CANCEL: { target: "idle", actions: "clearScreening" },
+        RESET: { target: "idle", actions: "clearScreening" },
       },
       states: {
         awaitingJobDescription: {
