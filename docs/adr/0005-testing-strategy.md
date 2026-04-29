@@ -80,7 +80,7 @@ opposite.
 
 ## What's intentionally not tested
 
-- **The Anthropic API.** Their job to test their API. We use `generateObject`
+- **The OpenRouter / model API.** Their job to test their API. We use `generateObject`
   with a schema, so a wire-format change would surface as a schema-violation
   error which our tests already cover.
 - **Drizzle's SQL generation.** Their job. We integration-test the repos against
@@ -95,7 +95,7 @@ opposite.
 
 Two reasons:
 
-1. **CI shouldn't depend on Anthropic uptime or burn budget.** A flaky external
+1. **CI shouldn't depend on OpenRouter uptime or burn budget.** A flaky external
    dependency makes the build flaky.
 2. **Determinism for E2E.** A real model returns slightly different text each
    run; asserting on it makes the test brittle. The fake returns the same

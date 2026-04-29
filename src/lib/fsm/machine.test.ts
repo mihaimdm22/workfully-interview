@@ -130,7 +130,7 @@ describe("botMachine", () => {
   it("handles screening actor failure: returns to idle with error captured", async () => {
     const actor = makeActor({
       screenImpl: async () => {
-        throw new Error("Anthropic 503");
+        throw new Error("OpenRouter 503");
       },
     });
     actor.start();
@@ -140,7 +140,7 @@ describe("botMachine", () => {
     const final = await waitFor(actor, (s) => s.value === "idle", {
       timeout: 1000,
     });
-    expect(final.context.error).toBe("Anthropic 503");
+    expect(final.context.error).toBe("OpenRouter 503");
     expect(final.context.jobDescription).toBeUndefined();
     expect(final.context.cv).toBeUndefined();
   });

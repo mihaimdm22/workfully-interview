@@ -1,6 +1,6 @@
-# ADR 0004 — AI: Vercel AI SDK + Anthropic + structured output
+# ADR 0004 — AI: Vercel AI SDK + Claude (via OpenRouter) + structured output
 
-**Status:** Accepted
+**Status:** Accepted (revised — provider routing moved to OpenRouter)
 
 **Context.** The screening step has to compare a JD against a CV and produce a
 verdict that the UI renders as a card (verdict, score, must-haves, gaps,
@@ -9,12 +9,16 @@ get structured output, where the prompt lives.
 
 ## Decisions
 
-### Provider: Anthropic Claude Sonnet 4.6
+### Provider: Claude Sonnet 4.6 routed via OpenRouter
 
 - Cost-effective, strong reasoning for evaluation tasks, fits in a few seconds.
-- Easily swappable — see the abstraction below — so this decision is two-way.
+- OpenRouter sits in front of every major vendor; the same API key and call
+  surface lets us A/B different models (`anthropic/claude-sonnet-4.6`,
+  `openai/gpt-4o`, `google/gemini-2.5-pro`, …) without code changes — only the
+  `OPENROUTER_MODEL` env var moves.
+- Single billing surface, single key to rotate, vendor-agnostic by default.
 
-### Library: Vercel AI SDK v6 (`ai` + `@ai-sdk/anthropic`)
+### Library: Vercel AI SDK v6 (`ai` + `@openrouter/ai-sdk-provider`)
 
 | Option                     | Pros                                                                                                                    | Cons                                                                    |
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
@@ -59,7 +63,7 @@ that's the time to introduce one.
 
 ### Test mode (`WORKFULLY_FAKE_AI=1`)
 
-`screen()` checks an env var. When set, it bypasses Anthropic and returns a
+`screen()` checks an env var. When set, it bypasses OpenRouter and returns a
 deterministic verdict based on simple keyword heuristics over the CV text. The
 heuristics are tuned to the three sample CVs (strong / weak / wrong-role) so the
 E2E test produces stable output without burning API credits or depending on
@@ -71,7 +75,7 @@ This is documented and clearly off in production. See [`0005-testing-strategy.md
 
 - The screening verdict is _always_ schema-valid or the screening fails. There's no
   "model said something weird, let's try to parse it" code path.
-- Provider swap is a one-import change in `screen.ts` (e.g., `openai('gpt-4.1')`).
+- Provider swap is a single env-var change (`OPENROUTER_MODEL`) — no code edits.
   The schema, prompt, and FSM don't move.
 - Streaming verdicts (`streamObject`) is a future enhancement that doesn't require
   any FSM changes — the actor would just resolve later.

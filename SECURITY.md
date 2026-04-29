@@ -30,5 +30,5 @@ Only the latest commit on `main` is supported.
 ## Notes
 
 - PDF parsing (`unpdf`) runs on untrusted user uploads; size is capped at 5 MB.
-- The Anthropic API key is server-only; it is never exposed to the client bundle.
+- The OpenRouter API key is server-only; it is never exposed to the client bundle.
 - The conversation cookie is `httpOnly` + `sameSite: lax`.

@@ -1,6 +1,6 @@
 {
   "name": "workfully-screening-bot",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Conversational FSM-driven candidate screening bot. Workfully technical challenge.",
   "author": "David Marin",
@@ -42,7 +42,7 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.71",
+    "@openrouter/ai-sdk-provider": "^2.9.0",
     "ai": "^6.0.168",
     "drizzle-orm": "^0.45.2",
     "nanoid": "^5.1.9",
