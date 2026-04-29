@@ -1,0 +1,90 @@
+{
+  "name": "workfully-screening-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Conversational FSM-driven candidate screening bot. Workfully technical challenge.",
+  "author": "David Marin",
+  "license": "MIT",
+  "homepage": "https://github.com/mihaimdm22/workfully-interview#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mihaimdm22/workfully-interview.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mihaimdm22/workfully-interview/issues"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "knip": "knip",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx src/lib/db/migrate.ts",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm knip && pnpm test",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.71",
+    "ai": "^6.0.168",
+    "drizzle-orm": "^0.45.2",
+    "nanoid": "^5.1.9",
+    "next": "16.2.4",
+    "postgres": "^3.4.9",
+    "react": "19.2.5",
+    "react-dom": "19.2.5",
+    "unpdf": "^1.6.1",
+    "xstate": "^5.31.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^20.5.2",
+    "@commitlint/config-conventional": "^20.5.0",
+    "@playwright/test": "^1.59.1",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^25.6.0",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitest/coverage-v8": "^4.1.5",
+    "@vitest/ui": "^4.1.5",
+    "dotenv": "^17.4.2",
+    "drizzle-kit": "^0.31.10",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "16.2.4",
+    "husky": "^9.1.7",
+    "knip": "^6.7.0",
+    "lint-staged": "^16.4.0",
+    "postcss": "^8.5.12",
+    "prettier": "^3.8.3",
+    "prettier-plugin-tailwindcss": "^0.8.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,mjs,cjs}": [
+      "prettier --write",
+      "eslint --fix --max-warnings 0"
+    ],
+    "*.{css,json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  }
+}

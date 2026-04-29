@@ -1,0 +1,15 @@
+# Default reviewer for everything.
+* @mihaimdm22
+
+# Workflows + repo config — review carefully, blast radius across CI.
+/.github/                @mihaimdm22
+/.husky/                 @mihaimdm22
+/commitlint.config.mjs   @mihaimdm22
+
+# DB schema + migrations — irreversible in production.
+/src/lib/db/schema.ts    @mihaimdm22
+/src/lib/db/migrations/  @mihaimdm22
+
+# AI prompt + screening boundary — verdict semantics depend on this.
+/src/lib/ai/             @mihaimdm22
+/src/lib/domain/screening.ts @mihaimdm22
