@@ -29,11 +29,17 @@ cp .env.example .env     # set OPENROUTER_API_KEY
 pnpm dev                 # http://localhost:3000
 ```
 
-For E2E or contributor demos without burning OpenRouter credits:
+**Fast path** — try it in under a minute, no API key, only Docker:
 
 ```bash
+pnpm install && pnpm db:up && pnpm db:migrate
+cp .env.example .env     # OPENROUTER_API_KEY can stay as-is for fake-AI mode
 WORKFULLY_FAKE_AI=1 pnpm dev
 ```
+
+The fake AI returns deterministic verdicts driven by markers in the CV
+(`[TEST_VERDICT_WEAK]`, `[TEST_VERDICT_WRONG_ROLE]`, default = strong). Same
+codepath that CI runs for E2E.
 
 ---
 
@@ -64,16 +70,17 @@ WORKFULLY_FAKE_AI=1 pnpm dev
 
 ## Stack
 
-| Layer      | Choice                                                                    | ADR                                                 |
-| ---------- | ------------------------------------------------------------------------- | --------------------------------------------------- |
-| Runtime    | Next.js 16 (App Router) + React 19                                        | [0002](./docs/adr/0002-architecture.md)             |
-| FSM        | XState v5                                                                 | [0001](./docs/adr/0001-fsm-with-xstate.md)          |
-| Database   | Postgres 17 + Drizzle ORM                                                 | [0003](./docs/adr/0003-database.md)                 |
-| AI         | Vercel AI SDK v6 + Claude Sonnet 4.6 via OpenRouter                       | [0004](./docs/adr/0004-ai-and-structured-output.md) |
-| Validation | Zod v4 (single source of truth: schema → types → JSON schema for the LLM) | —                                                   |
-| Testing    | Vitest (unit + coverage) + Playwright (E2E with fake AI)                  | [0005](./docs/adr/0005-testing-strategy.md)         |
-| Style      | Tailwind CSS 4                                                            | —                                                   |
-| Lang       | TypeScript 6 strict + `noUncheckedIndexedAccess`                          | —                                                   |
+| Layer       | Choice                                                                    | ADR                                                 |
+| ----------- | ------------------------------------------------------------------------- | --------------------------------------------------- |
+| Runtime     | Next.js 16 (App Router) + React 19                                        | [0002](./docs/adr/0002-architecture.md)             |
+| FSM         | XState v5                                                                 | [0001](./docs/adr/0001-fsm-with-xstate.md)          |
+| Database    | Postgres 17 + Drizzle ORM                                                 | [0003](./docs/adr/0003-database.md)                 |
+| Concurrency | Optimistic CAS (per-conversation `version` column)                        | [0006](./docs/adr/0006-orchestrator-concurrency.md) |
+| AI          | Vercel AI SDK v6 + Claude Sonnet 4.6 via OpenRouter                       | [0004](./docs/adr/0004-ai-and-structured-output.md) |
+| Validation  | Zod v4 (single source of truth: schema → types → JSON schema for the LLM) | —                                                   |
+| Testing     | Vitest (unit) + Testcontainers (integration) + Playwright (E2E, fake AI)  | [0005](./docs/adr/0005-testing-strategy.md)         |
+| Style       | Tailwind CSS 4                                                            | —                                                   |
+| Lang        | TypeScript 6 strict + `noUncheckedIndexedAccess`                          | —                                                   |
 
 All versions are the latest stable as of April 2026.
 
@@ -83,28 +90,28 @@ All versions are the latest stable as of April 2026.
 
 ```
                  ┌──────────────────────────────┐
-                 │           IDLE               │ ◀──── /cancel, /reset
+                 │           idle               │ ◀──── /cancel, /reset
                  │   "I'm here to help."        │
                  └──┬───────────────────┬───────┘
    /screen ─────────┘                   └────────── /newjob
                     ▼                              ▼
-        ┌───────────────────────┐       ┌────────────────────┐
-        │      SCREENING        │       │    JOB_BUILDER      │
-        │ ┌───────────────────┐ │       │   (mocked, /cancel │
-        │ │ awaitingJD        │ │       │    returns to idle)│
-        │ └─────────┬─────────┘ │       └────────────────────┘
-        │           ▼            │
-        │ ┌───────────────────┐ │
-        │ │ awaitingCv        │ │
-        │ └─────────┬─────────┘ │
-        │           ▼            │
-        │ ┌───────────────────┐ │       ──invokes screen() actor──▶ OpenRouter
-        │ │ evaluating        │ │       ◀──────  result OR error  ──
-        │ └─────┬───────┬─────┘ │
-        │       ▼       ▼       │
-        │ presenting   error    │
-        │   Result    → idle    │
-        └───────────────────────┘
+       ┌─────────────────────────┐    ┌────────────────────┐
+       │       screening         │    │    jobBuilder       │
+       │ ┌──────────────────────┐│    │   (mocked, /cancel │
+       │ │ gathering            ││    │    returns to idle)│
+       │ │  fills JD/CV slots,  ││    └────────────────────┘
+       │ │  always → evaluating ││
+       │ │  once both filled    ││
+       │ └──────────┬───────────┘│
+       │            ▼             │   ──invokes screen() actor──▶ OpenRouter
+       │ ┌──────────────────────┐│   ◀──── result | error | abort ──
+       │ │ evaluating           ││
+       │ │  └ after 60s ───┐    ││
+       │ └────┬───────┬────│────┘│
+       │      ▼       ▼    ▼     │
+       │ presenting  error timedOut → idle (with typed error)
+       │   Result    → idle      │
+       └─────────────────────────┘
 ```
 
 The full hierarchy and transition table lives in
@@ -249,6 +256,58 @@ or natural-language equivalents (`screen a candidate`, `start over`, `stop`).
 
 ---
 
+## What shipped on day two
+
+After the original v0.1.0 deliverable, an audit pass on the codebase produced
+14 small wins plus one structural change. The headline:
+
+**Concurrency-safe orchestrator with FSM-owned timeout and structural cancellation.**
+Two reviewers (Codex CLI and an independent Claude subagent) audited
+`src/lib/fsm/orchestrator.ts` and surfaced the same bug: under concurrent
+requests on the same conversation, two writers could both read the same FSM
+snapshot, both run `actor.send`, both write — last-writer-wins silently fork
+the state machine. They also both flagged that the 60s `EVAL_TIMEOUT_MS` lived
+outside the FSM, which leaked an in-flight `generateObject` HTTP call when it
+fired and created a fork window where the FSM could land in
+`presentingResult` while the orchestrator returned a "took too long" error.
+
+First instinct was `SELECT FOR UPDATE` to serialise the writes. Rejected:
+the lock would be held across the 10s+ AI call and convoy the connection
+pool under load (Vercel Fluid Compute runs `max: 1` per instance — one stuck
+conversation pins the whole instance for up to 60s).
+
+Shipped instead:
+
+- **Optimistic concurrency** via a `version` column on `conversations`. The
+  orchestrator reads `(snapshot, version)`, runs the AI call with no DB
+  connection held, then commits via `UPDATE ... WHERE id = ? AND version = ?`.
+  CAS conflict throws `ConcurrentModificationError`; the action layer maps
+  it to a typed product string ("This conversation changed in another tab —
+  refresh to continue.").
+- **FSM-owned timeout** via XState's `after` delayed transition. The
+  orchestrator no longer races with the FSM — when timeout fires, XState
+  cleanly transitions to `idle` and stops the invoked actor.
+- **Structural cancellation.** XState's `fromPromise` signal is forwarded
+  into `screen(input, { signal })` and on into `generateObject({ abortSignal })`.
+  When the FSM exits `evaluating` for any reason, the in-flight HTTP call
+  to OpenRouter is actually aborted, not just abandoned.
+- **Real-Postgres integration test.** One Testcontainers test in
+  `test/integration/orchestrator.concurrent.test.ts` verifies the SQL
+  primitive serialises concurrent CAS attempts. Lives in a separate Vitest
+  lane (`pnpm test:integration`) so the default `pnpm test` stays
+  Docker-free.
+
+Full rationale in [ADR 0006](./docs/adr/0006-orchestrator-concurrency.md).
+
+The audit also produced 13 small wins around correctness, observability, and
+DX: `actor.stop()` in `try/finally` on every error path, `secure` cookie flag
+in production, Zod schema tightening so a malformed snapshot row can't crash
+XState during rehydration, request-scoped structured logger that emits FSM
+transitions and AI latency, unit tests for the proxy and Server Actions
+surfaces, Codecov upload, CI gating fix so e2e waits for unit tests to pass,
+Postgres connection-pool size that branches on `process.env.VERCEL`, and
+explicit fixture markers for the fake-AI test escape hatch.
+
 ## What I'd do with another day
 
 - **Streaming verdicts.** `streamObject` would let the user see the verdict take shape
@@ -260,13 +319,15 @@ or natural-language equivalents (`screen a candidate`, `start over`, `stop`).
   re-running an old verdict against a different model is just a worker job away.
 - **Multi-tenancy.** Every row would gain a `workspace_id`; cookies would carry it.
   Routes would scope queries on it. Pure mechanical work, omitted for time.
-- **Repository integration tests.** Run them against a Testcontainers Postgres in
-  CI. The repos are tiny enough that the unit-tested FSM + AI service catches most
-  regressions, but I'd add this for any change to schema.
+- **Per-conversation rate limiting.** An in-flight token (Redis or in-memory if
+  single-instance) would deflect concurrent dispatch attempts before they hit
+  the DB at all. The CAS pattern handles correctness; this would handle
+  abuse / accidental double-clicks gracefully.
+- **Broader repository integration tests.** W19' shipped one Testcontainers
+  case for the CAS primitive; the rest of the repo layer would benefit from
+  the same treatment now that the infrastructure is in place.
 - **Job Builder for real.** Today it returns a mock prompt — implementing it with
   the same FSM-as-source-of-truth approach would mirror the screening flow.
-- **Observability.** A request-scoped logger that emits FSM transitions, AI latency,
-  and DB query timing would make production debugging trivial.
 
 ---
 

@@ -13,7 +13,7 @@ import "server-only";
  * a belt-and-suspenders fallback.
  */
 
-export interface LogFields {
+interface LogFields {
   event: string;
   from?: string;
   to?: string;
@@ -23,7 +23,7 @@ export interface LogFields {
   [k: string]: unknown;
 }
 
-export interface Logger {
+interface Logger {
   info(fields: LogFields): void;
   error(fields: LogFields): void;
 }
