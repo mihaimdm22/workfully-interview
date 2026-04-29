@@ -21,7 +21,7 @@ opposite.
 │                                                                      │
 │        Vitest (boundary tests)                                       │
 │        - AI service: MockLanguageModelV3 with valid + invalid output │
-│        - (Repos: integration via Testcontainers in CI — TODO)        │
+│        - Concurrency: Testcontainers Postgres for CAS (W19')         │
 │                                                                      │
 │   ──────────────────────────────────────────────────────────         │
 │                                                                      │
@@ -84,8 +84,11 @@ opposite.
 - **The OpenRouter / model API.** Their job to test their API. We use `generateObject`
   with a schema, so a wire-format change would surface as a schema-violation
   error which our tests already cover.
-- **Drizzle's SQL generation.** Their job. We integration-test the repos against
-  a real Postgres in CI (TODO note in repos.ts), not by faking the driver.
+- **Drizzle's SQL generation.** Their job. We do integration-test the
+  optimistic-concurrency primitive (`updateConversationSnapshotIfVersion`)
+  against a real Postgres via Testcontainers (`pnpm test:integration`,
+  W19'/ADR 0006) — that's the one repository function whose correctness
+  depends on actual SQL semantics rather than the typed call surface.
 - **Tailwind CSS.** No.
 - **Verdict accuracy.** That's an evaluation problem, not a unit-test problem.
   The right tool is an offline eval suite over a labeled fixture set, run
@@ -107,8 +110,10 @@ var — production never has `WORKFULLY_FAKE_AI` set, the codepath is dead.
 
 ## What I'd add with another day
 
-- **Repository integration tests** with Testcontainers running Postgres in CI.
-  The repos are tiny but schema migrations deserve a smoke test.
+- **Broader repository integration tests.** W19' shipped one Testcontainers
+  test for the CAS primitive — the rest of the repo layer (createConversation,
+  appendMessage, listMessages, recordScreening) would benefit from the same
+  treatment. The infrastructure is in place; it's just more cases.
 - **Eval harness.** A `pnpm eval` that runs the fixture CVs against the real
   prompt and a labeled rubric, reports a pass rate over a sample. Run on prompt
   changes.

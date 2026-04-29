@@ -12,9 +12,10 @@ import {
   createConversation,
   getConversation,
   recordScreening,
-  updateConversationSnapshot,
+  updateConversationSnapshotIfVersion,
 } from "@/lib/db/repositories";
 import { screen, type ScreenOutput } from "@/lib/ai/screen";
+import { createLogger, stateString } from "@/lib/log";
 import type { ScreeningResult } from "@/lib/domain/screening";
 
 /**
@@ -23,13 +24,19 @@ import type { ScreeningResult } from "@/lib/domain/screening";
  * One public entrypoint per request: `dispatch(conversationId, event, userMessage)`.
  *
  * Inside, we:
- *   1. Hydrate the FSM from the conversation's persisted snapshot.
- *   2. Provide a real screening actor (the `fromPromise` calls the LLM via OpenRouter).
- *   3. Send the event, await any async invoke.
- *   4. Persist the new snapshot + transcript messages atomically-ish.
+ *   1. Hydrate the FSM from the conversation's persisted snapshot + version.
+ *   2. Provide a real screening actor (`fromPromise` calls the LLM via
+ *      OpenRouter, forwarding XState's `signal` so the FSM can abort).
+ *   3. Send the event and `waitFor` a non-evaluating state. The FSM owns the
+ *      timeout (XState `after`); the orchestrator does not race with it.
+ *   4. Persist the new snapshot via optimistic CAS — `UPDATE ... WHERE
+ *      version = expectedVersion`. If another request wrote in between we
+ *      throw `ConcurrentModificationError` and let the caller decide what to
+ *      tell the user.
  *
- * The orchestrator is the only place that knows about both the FSM and the AI.
- * Everything else stays pure.
+ * No transaction wraps the AI call. The CAS write is short, runs outside any
+ * LLM call, and the version column carries the same correctness guarantee
+ * without holding a connection across a 60s network call. See ADR 0006.
  */
 
 interface DispatchInput {
@@ -49,8 +56,6 @@ interface DispatchResult {
   error?: string;
 }
 
-const EVAL_TIMEOUT_MS = 60_000;
-
 type ScreenMeta = { model: string; latencyMs: number };
 
 interface RequestContext {
@@ -61,6 +66,11 @@ interface RequestContext {
  * Build a request-scoped machine. The screening actor closes over a per-request
  * mutable holder so the orchestrator can pull metadata (model, latency) after the
  * actor resolves, without resorting to module-level globals.
+ *
+ * `signal` from XState's `fromPromise` is forwarded to `screen()` so that
+ * when the FSM exits `evaluating` (e.g., the `after` timeout fires), the
+ * in-flight `generateObject` call is actually cancelled — not just
+ * abandoned.
  */
 function machineForRequest(ctx: RequestContext) {
   return botMachine.provide({
@@ -69,8 +79,7 @@ function machineForRequest(ctx: RequestContext) {
         ScreeningResult,
         { jobDescription: string; cv: string }
       >(async ({ input, signal }) => {
-        if (signal?.aborted) throw new Error("Aborted");
-        const out: ScreenOutput = await screen(input);
+        const out: ScreenOutput = await screen(input, { signal });
         ctx.meta.lastScreen = { model: out.model, latencyMs: out.latencyMs };
         return out.result;
       }),
@@ -142,6 +151,8 @@ export async function dispatch({
   userMessage,
   attachment,
 }: DispatchInput): Promise<DispatchResult> {
+  const log = createLogger(conversationId);
+  const dispatchStart = Date.now();
   const convo = await getConversation(conversationId);
   if (!convo) throw new Error(`Conversation not found: ${conversationId}`);
 
@@ -149,6 +160,7 @@ export async function dispatch({
     throw new Error("Persisted FSM snapshot is malformed");
   }
   const persistedInput = migrateLegacySnapshot(convo.fsmSnapshot);
+  const expectedVersion = convo.version;
 
   // Append user message first so it shows up even if the AI call later throws.
   if (userMessage) {
@@ -177,26 +189,48 @@ export async function dispatch({
   });
   actor.start();
 
-  // Capture snapshots before & after for screening detection.
-  const before = actor.getSnapshot() as BotSnapshot;
-  actor.send(event);
+  // try/finally so any throw between actor.start() and getPersistedSnapshot()
+  // still releases the actor's timers and subscriptions. waitFor below is
+  // unbounded — the FSM's `after` transition owns the timeout, so a stalled
+  // AI call lands cleanly in `idle` with a typed error rather than waitFor
+  // rejecting from the orchestrator's side.
+  let persisted: PersistedSnapshot;
+  let before: BotSnapshot;
+  let after: BotSnapshot;
+  try {
+    before = actor.getSnapshot() as BotSnapshot;
+    actor.send(event);
 
-  // If we entered `evaluating`, wait until we leave it (success or error path).
-  let after = actor.getSnapshot() as BotSnapshot;
-  if (after.matches({ screening: "evaluating" })) {
-    after = (await waitFor(
-      actor,
-      (snap) => !snap.matches({ screening: "evaluating" }),
-      {
-        timeout: EVAL_TIMEOUT_MS,
-      },
-    )) as BotSnapshot;
+    // If we entered `evaluating`, wait until we leave it via either
+    // onDone, onError, or the FSM-owned `after` timeout.
+    after = actor.getSnapshot() as BotSnapshot;
+    if (after.matches({ screening: "evaluating" })) {
+      after = (await waitFor(
+        actor,
+        (snap) => !snap.matches({ screening: "evaluating" }),
+      )) as BotSnapshot;
+    }
+
+    persisted = actor.getPersistedSnapshot() as PersistedSnapshot;
+    log.info({
+      event: "fsm.transition",
+      from: stateString(before.value),
+      to: stateString(after.value),
+      ms: ctx.meta.lastScreen?.latencyMs,
+      model: ctx.meta.lastScreen?.model,
+    });
+  } finally {
+    actor.stop();
   }
 
-  const persisted = actor.getPersistedSnapshot() as PersistedSnapshot;
-  actor.stop();
-
-  await updateConversationSnapshot(conversationId, persisted);
+  // Compare-and-swap on `version`. If another request wrote the conversation
+  // in between, this throws `ConcurrentModificationError` and the action
+  // layer maps it to a refresh-prompt for the user.
+  await updateConversationSnapshotIfVersion(
+    conversationId,
+    persisted,
+    expectedVersion,
+  );
 
   // If a screening just produced a result, persist it.
   const justFinishedScreening =
@@ -224,6 +258,14 @@ export async function dispatch({
     conversationId,
     role: "bot",
     content: reply,
+  });
+
+  log.info({
+    event: "fsm.dispatch.done",
+    ms: Date.now() - dispatchStart,
+    state: stateString(after.value),
+    hasResult: after.context.result !== undefined,
+    hasError: after.context.error !== undefined,
   });
 
   return {
@@ -259,10 +301,14 @@ export async function loadConversation(conversationId: string): Promise<{
       : never,
   });
   actor.start();
-  const snap = actor.getSnapshot() as BotSnapshot;
-  actor.stop();
-
-  return { state: snap.value, context: snap.context };
+  // try/finally so a thrown getSnapshot (e.g., from a malformed rehydration)
+  // can't leave the actor running.
+  try {
+    const snap = actor.getSnapshot() as BotSnapshot;
+    return { state: snap.value, context: snap.context };
+  } finally {
+    actor.stop();
+  }
 }
 
 function renderReply(snap: BotSnapshot): string {

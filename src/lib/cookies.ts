@@ -4,10 +4,11 @@ import { cookies } from "next/headers";
 /**
  * Conversation cookie helpers.
  *
- * The cookie is **minted by middleware** (`src/middleware.ts`) on first visit
- * — Next 16 forbids cookie writes from Server Component renders. These helpers
- * read the cookie or clear it; setting only happens in middleware (per-visit)
- * or in a Route Handler / Server Action when the user explicitly resets.
+ * The cookie is **minted by the proxy** (`src/proxy.ts`) on first visit
+ * — Next 16 forbids cookie writes from Server Component renders, and renamed
+ * the `middleware.ts` convention to `proxy.ts`. These helpers read the cookie
+ * or clear it; setting only happens in the proxy (per-visit) or in a Route
+ * Handler / Server Action when the user explicitly resets.
  */
 
 export const CONVERSATION_COOKIE_NAME = "workfully_conversation_id";

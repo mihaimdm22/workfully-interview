@@ -87,4 +87,34 @@ describe("screen", () => {
       screen({ jobDescription: "jd", cv: "cv" }, { model: fakeModel(bad) }),
     ).rejects.toThrow();
   });
+
+  it("forwards the abort signal to generateObject (W19')", async () => {
+    // Capture the signal the AI SDK passes into the model so we can assert
+    // it's the one we provided.
+    let receivedSignal: AbortSignal | undefined;
+    const model = new MockLanguageModelV3({
+      provider: "mock",
+      modelId: "mock-model",
+      doGenerate: async ({ abortSignal }) => {
+        receivedSignal = abortSignal;
+        const result: DoGenerateResult = {
+          content: [{ type: "text", text: JSON.stringify(VALID_OBJECT) }],
+          finishReason: { unified: "stop", raw: "stop" },
+          usage: {
+            inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+            outputTokens: { total: 1, text: 1, reasoning: 0 },
+          },
+          warnings: [],
+        };
+        return result;
+      },
+    });
+
+    const controller = new AbortController();
+    await screen(
+      { jobDescription: "jd", cv: "cv" },
+      { model, signal: controller.signal },
+    );
+    expect(receivedSignal).toBe(controller.signal);
+  });
 });

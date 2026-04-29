@@ -99,7 +99,10 @@ function Section({
       </div>
       <ul className="space-y-1.5">
         {items.map((item, i) => (
-          <li key={i} className="flex items-start gap-2">
+          <li
+            key={`${i}|${item.requirement}`}
+            className="flex items-start gap-2"
+          >
             <span
               aria-hidden
               className={`mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
@@ -145,7 +148,7 @@ function BulletBlock({
       </div>
       <ul className="text-foreground/90 mt-1.5 list-disc space-y-1 pl-5">
         {bullets.map((b, i) => (
-          <li key={i}>{b}</li>
+          <li key={`${title}|${i}|${b}`}>{b}</li>
         ))}
       </ul>
     </div>

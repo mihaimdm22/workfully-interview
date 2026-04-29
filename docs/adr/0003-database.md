@@ -89,6 +89,21 @@ Three intentional choices:
 3. **Indexes on `messages(conversation_id, created_at)` and `screenings(conversation_id)`.**
    Both queries we run on the hot path.
 
+## Concurrency model
+
+Conversations have a `version` integer column that's bumped on every write via
+optimistic compare-and-swap. The orchestrator reads `(snapshot, version)`,
+runs the AI call outside any transaction, and commits with
+`UPDATE ... WHERE id = ? AND version = ?`. If the row was modified in between
+(another tab, a duplicate request), the CAS returns zero rows and the
+repository throws `ConcurrentModificationError`. Full rationale in
+[ADR 0006](./0006-orchestrator-concurrency.md), including why we rejected
+`SELECT FOR UPDATE` despite its simpler correctness story.
+
+The connection-pool size also branches on the deploy target (see W13): `max: 1`
+on Vercel Fluid Compute, `max: 10` for Docker / long-lived servers. Override
+via `MAX_DB_CONNECTIONS`.
+
 ## Consequences
 
 - One Docker dependency for local dev. The `docker-compose.yml` is committed.
@@ -96,6 +111,8 @@ Three intentional choices:
   generator produces plain SQL — no opaque migration engine.
 - The DB client is a lazy singleton (`src/lib/db/client.ts`). It only connects on
   first query, so `next build` doesn't crash when `DATABASE_URL` is unset.
+- Concurrent writes on the same conversation are serialised by version, not by
+  row locking — see ADR 0006 for the trade-off.
 
 ## Why this answers the interview question
 

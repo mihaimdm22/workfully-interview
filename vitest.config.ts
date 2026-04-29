@@ -14,7 +14,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.{test,spec}.ts"],
-    exclude: ["e2e/**", "node_modules/**", ".next/**"],
+    exclude: ["e2e/**", "test/integration/**", "node_modules/**", ".next/**"],
     globals: false,
     coverage: {
       provider: "v8",
@@ -24,11 +24,7 @@ export default defineConfig({
         "src/lib/fsm/**/*.ts",
         "src/lib/ai/**/*.ts",
       ],
-      exclude: [
-        "src/lib/db/migrations/**",
-        "**/*.test.ts",
-        "src/lib/fsm/orchestrator.ts",
-      ],
+      exclude: ["src/lib/db/migrations/**", "**/*.test.ts"],
       // Hard floors. Below this, CI fails. Floors are conservative — tests
       // should generally run higher; the floor catches regressions, not perfection.
       thresholds: {

@@ -48,6 +48,16 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:coverage
+      # Upload coverage to Codecov. Requires CODECOV_TOKEN secret in repo
+      # settings (free for public repos). The action is a no-op if the
+      # token is missing, so PRs from forks won't fail here.
+      - name: Upload coverage
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/lcov.info
+          fail_ci_if_error: false
 
   build:
     name: Build
@@ -65,10 +75,29 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
+  integration:
+    name: Integration (Testcontainers)
+    runs-on: ubuntu-latest
+    needs: [lint-and-typecheck, test]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: ".nvmrc"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Testcontainers spins up its own postgres:17-alpine via the docker
+      # daemon — no `services:` block needed. The runner's docker is at
+      # /var/run/docker.sock by default, which testcontainers auto-detects.
+      - run: pnpm test:integration
+
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
-    needs: [lint-and-typecheck]
+    needs: [lint-and-typecheck, test]
     services:
       postgres:
         image: postgres:17-alpine
