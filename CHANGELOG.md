@@ -2,6 +2,19 @@
 
 All notable changes to the Workfully Screening Bot will be documented in this file.
 
+## [0.1.3.0] - 2026-04-29
+
+### Fixed
+
+- **Verdict cards now persist across screening transitions.** Previously the verdict card vanished from chat history the moment a user typed `/screen` again, leaving a stranded "Here's the screening verdict..." announcement with no card. The card is now driven from the persisted `screenings` table (paired by `createdAt` to the bot announcement message that hosted it), so historical verdicts stay visible across `/screen`, `/newjob`, `/reset`, and full page reload. Two consecutive screenings produce two cards in the transcript.
+- **`/reset` now works from every screening sub-state.** It was silently no-op'd from `awaitingJobDescription` and `awaitingCv` because the screening parent state declared `CANCEL` but not `RESET`. The README and the verdict-ready prompt both advertise `/reset` as a global "head back to idle" command, and `jobBuilder` already accepted both. Mirrored the existing `CANCEL` handler at the screening parent so `RESET` behaves the same way: target idle, run `clearScreening`.
+
+### Added
+
+- **`pairScreeningsToMessages` pure helper** (`src/lib/fsm/pair-screenings.ts`) that walks the message and screening lists once in O(N+M) and returns a per-message map of paired verdicts. Five unit tests cover empty input, single-screening pairing, multi-screening preservation, role filtering, and the leading bot greeting that must stay bare.
+- **`listScreenings(conversationId)` repository function** (`src/lib/db/repositories.ts`) returning every persisted verdict for a conversation, ordered by `createdAt`.
+- **Two FSM regression tests** for `/reset` from `awaitingJobDescription` and `awaitingCv`.
+
 ## [0.1.2.0] - 2026-04-29
 
 ### Fixed
