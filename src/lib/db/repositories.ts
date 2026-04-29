@@ -1,5 +1,5 @@
 import "server-only";
-import { eq, asc } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getDb } from "./client";
 import {
@@ -13,6 +13,26 @@ import {
   type Screening,
 } from "./schema";
 import type { PersistedSnapshot } from "@/lib/fsm/snapshot";
+
+/**
+ * Thrown when an optimistic-concurrency compare-and-swap fails: the row's
+ * `version` no longer matches what the caller read, meaning another request
+ * wrote the conversation in between. The action layer translates this to a
+ * product error string ("This conversation changed in another tab — refresh
+ * to continue.") so users see something they can act on, not the class name.
+ */
+export class ConcurrentModificationError extends Error {
+  readonly conversationId: string;
+  readonly expectedVersion: number;
+  constructor(conversationId: string, expectedVersion: number) {
+    super(
+      `Conversation ${conversationId} was modified concurrently (expected version ${expectedVersion})`,
+    );
+    this.name = "ConcurrentModificationError";
+    this.conversationId = conversationId;
+    this.expectedVersion = expectedVersion;
+  }
+}
 
 /**
  * Thin repository layer.
@@ -60,6 +80,39 @@ export async function updateConversationSnapshot(
     .update(conversations)
     .set({ fsmSnapshot: snapshot, updatedAt: new Date() })
     .where(eq(conversations.id, id));
+}
+
+/**
+ * Compare-and-swap update. Updates the conversation's snapshot only if the
+ * current `version` still matches `expectedVersion`; otherwise throws
+ * `ConcurrentModificationError`. Returns the new version on success.
+ *
+ * The tx is short — just one UPDATE — and runs OUTSIDE any AI call. The
+ * orchestrator reads the version, calls the LLM (no DB connection held),
+ * and only then attempts the CAS write.
+ */
+export async function updateConversationSnapshotIfVersion(
+  id: string,
+  snapshot: PersistedSnapshot,
+  expectedVersion: number,
+): Promise<number> {
+  const db = getDb();
+  const rows = await db
+    .update(conversations)
+    .set({
+      fsmSnapshot: snapshot,
+      version: sql`${conversations.version} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(eq(conversations.id, id), eq(conversations.version, expectedVersion)),
+    )
+    .returning({ version: conversations.version });
+  const row = rows[0];
+  if (!row) {
+    throw new ConcurrentModificationError(id, expectedVersion);
+  }
+  return row.version;
 }
 
 export async function appendMessage(
