@@ -36,6 +36,15 @@ export interface ScreenOutput {
 interface ScreenDeps {
   model?: LanguageModel;
   modelId?: string;
+  /**
+   * Cancellation signal. The orchestrator passes the AbortSignal that
+   * XState's `fromPromise` exposes to the invoked actor so that when the
+   * FSM exits `evaluating` (e.g., the `after` timeout fires, or the user
+   * navigates away), the in-flight `generateObject` call is cancelled
+   * instead of running to completion against a discarded actor. See
+   * ADR 0006.
+   */
+  signal?: AbortSignal;
 }
 
 const SYSTEM_PROMPT = `You are a senior technical recruiter at a B2B SaaS company.
@@ -90,6 +99,7 @@ export async function screen(
     prompt: buildPrompt(input),
     temperature: 0.2,
     maxRetries: 2,
+    abortSignal: deps.signal,
   });
   const latencyMs = Date.now() - startedAt;
 
