@@ -32,6 +32,12 @@ const config = {
         "deps",
         "docs",
         "config",
+        // Granular scopes for the W19' concurrency rewrite — orchestrator
+        // is the cross-layer file, proxy/actions/log are independent.
+        "orchestrator",
+        "proxy",
+        "actions",
+        "log",
       ],
     ],
     "scope-empty": [1, "never"],
