@@ -42,15 +42,15 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.71",
-    "ai": "^6.0.168",
+    "@ai-sdk/anthropic": "^3.0.72",
+    "ai": "^6.0.169",
     "drizzle-orm": "^0.45.2",
     "nanoid": "^5.1.9",
     "next": "16.2.4",
     "postgres": "^3.4.9",
     "react": "19.2.5",
     "react-dom": "19.2.5",
-    "unpdf": "^1.6.1",
+    "unpdf": "^1.6.2",
     "xstate": "^5.31.0",
     "zod": "^4.3.6"
   },
@@ -69,7 +69,7 @@
     "eslint": "^9.39.4",
     "eslint-config-next": "16.2.4",
     "husky": "^9.1.7",
-    "knip": "^6.7.0",
+    "knip": "^6.8.0",
     "lint-staged": "^16.4.0",
     "postcss": "^8.5.12",
     "prettier": "^3.8.3",
