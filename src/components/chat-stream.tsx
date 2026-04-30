@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { MessageBubble } from "@/components/message-bubble";
 import { ScreeningResultCard } from "@/components/screening-result-card";
@@ -72,6 +72,23 @@ export function ChatStream({
   const textRef = useRef<HTMLTextAreaElement>(null);
   const router = useRouter();
 
+  // Publish streaming state on `<body data-streaming>` so client trees outside
+  // this subtree (the sidebar's "+ New screening" button) can decide whether
+  // to confirm before reset. Cheaper than wiring a React context that would
+  // force the workspace layout to become a client component. See eng review
+  // issue #4 in `.context/plans/screening-history-plan.md`.
+  useEffect(() => {
+    const body = document.body;
+    if (pending) {
+      body.dataset.streaming = "true";
+    } else {
+      delete body.dataset.streaming;
+    }
+    return () => {
+      delete body.dataset.streaming;
+    };
+  }, [pending]);
+
   function tempId(): string {
     return `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   }
@@ -132,7 +149,18 @@ export function ChatStream({
             botReply = parsed.reply;
             break;
           case "error":
+            // Clear stale streaming UI on error. Specifically: if a RESET
+            // from another tab won the CAS race against an in-flight
+            // evaluation, the SSE route emits this error event AFTER having
+            // already streamed `partial` events. Without these resets the
+            // user sees a half-rendered StreamingVerdict next to a red
+            // banner — broken-state-machine UI. router.refresh() pulls a
+            // fresh transcript so the chat reconciles to actual server
+            // state. See eng review issue #5.
             setError(parsed.error ?? "Failed");
+            setPartial(null);
+            setOptimistic([]);
+            router.refresh();
             break;
         }
       }

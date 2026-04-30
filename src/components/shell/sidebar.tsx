@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { startNewScreening } from "@/app/actions";
 import type { Verdict } from "@/lib/domain/verdict-style";
 import { VerdictDot } from "@/components/ui/pill";
+import { NewScreeningButton } from "@/components/shell/new-screening-button";
 
 export interface SidebarRow {
   id: string;
@@ -28,17 +28,7 @@ export function Sidebar({ rows, activeId }: SidebarProps) {
       </div>
 
       <div className="px-3 pb-3">
-        <form action={startNewScreening}>
-          <button
-            type="submit"
-            className="bg-primary text-primary-fg flex w-full items-center justify-center gap-2 rounded-xl px-3.5 py-2.5 text-[14px] font-medium transition-opacity hover:opacity-90"
-          >
-            + New screening
-            <span className="ml-2 rounded border border-white/15 bg-white/10 px-1.5 py-0.5 font-mono text-[10px] text-white/75 dark:border-black/15 dark:bg-black/10 dark:text-black/75">
-              ⌘N
-            </span>
-          </button>
-        </form>
+        <NewScreeningButton />
       </div>
 
       <SidebarSection title="Recent" count={rows.length} />
@@ -55,7 +45,7 @@ export function Sidebar({ rows, activeId }: SidebarProps) {
                 href={`/screening/${row.id}`}
                 aria-current={row.id === activeId ? "page" : undefined}
                 data-active={row.id === activeId ? "" : undefined}
-                className="hover:bg-muted data-[active]:bg-muted grid grid-cols-[8px_1fr_auto] items-center gap-3 rounded-md px-2.5 py-2 transition-colors"
+                className="hover:bg-muted data-[active]:bg-muted group grid grid-cols-[8px_1fr_auto_auto] items-center gap-3 rounded-md px-2.5 py-2 transition-colors"
               >
                 <VerdictDot verdict={row.verdict} />
                 <div className="min-w-0">
@@ -69,6 +59,12 @@ export function Sidebar({ rows, activeId }: SidebarProps) {
                 <div className="text-fg-muted font-mono text-[12px] tabular-nums">
                   {row.score}
                 </div>
+                <span
+                  aria-hidden
+                  className="text-fg-subtle text-[14px] opacity-0 transition-opacity group-hover:opacity-100"
+                >
+                  ›
+                </span>
               </Link>
             </li>
           ))
