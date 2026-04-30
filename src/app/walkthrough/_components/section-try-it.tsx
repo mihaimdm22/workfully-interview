@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { startNewScreening } from "@/app/actions";
 import { Section } from "./section";
 
 interface TryItSectionProps {
@@ -15,12 +16,14 @@ export function TryItSection({ id, children }: TryItSectionProps) {
       lead="The cards below render via the same React components the running app uses. Click through to start a real screening of your own — drag in any JD + CV PDF and the bot evaluates them in about ten seconds."
     >
       <div className="my-6 flex flex-wrap gap-3">
-        <Link
-          href="/screening/new"
-          className="bg-primary text-primary-fg inline-flex h-10 items-center gap-2 rounded-md px-4 text-[14px] font-medium transition-opacity hover:opacity-90"
-        >
-          + Start a new screening
-        </Link>
+        <form action={startNewScreening}>
+          <button
+            type="submit"
+            className="bg-primary text-primary-fg inline-flex h-10 items-center gap-2 rounded-md px-4 text-[14px] font-medium transition-opacity hover:opacity-90"
+          >
+            + Start a new screening
+          </button>
+        </form>
         <Link
           href="/"
           className="border-border text-fg hover:bg-muted inline-flex h-10 items-center gap-2 rounded-md border px-4 text-[14px] transition-colors"

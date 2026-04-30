@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ensureConversation } from "@/app/actions";
+import { ensureConversation, startNewScreening } from "@/app/actions";
 import { listRecentScreenings } from "@/lib/db/repositories";
 import { Topbar } from "@/components/shell/topbar";
 import {
@@ -123,12 +123,14 @@ export default async function Dashboard({
 
 function NewScreeningButton() {
   return (
-    <Link
-      href="/screening/new"
-      className="bg-primary text-primary-fg inline-flex h-8 items-center gap-2 rounded-md px-3 text-[14px] font-medium whitespace-nowrap transition-opacity hover:opacity-90"
-    >
-      + New screening
-    </Link>
+    <form action={startNewScreening}>
+      <button
+        type="submit"
+        className="bg-primary text-primary-fg inline-flex h-8 items-center gap-2 rounded-md px-3 text-[14px] font-medium whitespace-nowrap transition-opacity hover:opacity-90"
+      >
+        + New screening
+      </button>
+    </form>
   );
 }
 
@@ -201,12 +203,14 @@ function EmptyDashboard() {
         structured, shareable verdict in about ten seconds.
       </p>
       <div className="mt-6 flex justify-center gap-3">
-        <Link
-          href="/screening/new"
-          className="bg-primary text-primary-fg inline-flex h-9 items-center gap-2 rounded-md px-4 text-[14px] font-medium transition-opacity hover:opacity-90"
-        >
-          + New screening
-        </Link>
+        <form action={startNewScreening}>
+          <button
+            type="submit"
+            className="bg-primary text-primary-fg inline-flex h-9 items-center gap-2 rounded-md px-4 text-[14px] font-medium transition-opacity hover:opacity-90"
+          >
+            + New screening
+          </button>
+        </form>
       </div>
       <p className="text-fg-subtle mt-6 text-[12px]">
         Try the sample fixtures:{" "}

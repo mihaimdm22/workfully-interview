@@ -51,6 +51,16 @@ beforeEach(() => {
   });
 });
 
+describe("startNewScreening", () => {
+  it("clears the conversation cookie and redirects to /screening/new", async () => {
+    const { redirect } = await import("next/navigation");
+    const { startNewScreening } = await import("./actions");
+    await startNewScreening();
+    expect(cookies.clearConversationCookie).toHaveBeenCalledOnce();
+    expect(redirect).toHaveBeenCalledWith("/screening/new");
+  });
+});
+
 describe("sendTextMessage", () => {
   it("rejects empty text", async () => {
     const { sendTextMessage } = await import("./actions");

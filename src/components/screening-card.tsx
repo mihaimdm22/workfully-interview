@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { startNewScreening } from "@/app/actions";
 import { Pill } from "@/components/ui/pill";
 import { ScoreDisplay } from "@/components/ui/score-display";
 import type { Verdict } from "@/lib/domain/verdict-style";
@@ -52,16 +53,18 @@ export function ScreeningCard({ screening }: { screening: ScreeningCardData }) {
 
 export function NewScreeningCard() {
   return (
-    <Link
-      href="/screening/new"
-      className="border-border text-fg-muted hover:border-accent hover:text-accent flex min-h-[200px] flex-col items-center justify-center gap-1 rounded-xl border border-dashed p-5 transition-colors"
-    >
-      <span className="text-[22px]" aria-hidden>
-        +
-      </span>
-      <div className="text-[14px] font-medium">New screening</div>
-      <div className="text-fg-subtle text-[12px]">⌘N</div>
-    </Link>
+    <form action={startNewScreening} className="contents">
+      <button
+        type="submit"
+        className="border-border text-fg-muted hover:border-accent hover:text-accent flex min-h-[200px] flex-col items-center justify-center gap-1 rounded-xl border border-dashed p-5 transition-colors"
+      >
+        <span className="text-[22px]" aria-hidden>
+          +
+        </span>
+        <div className="text-[14px] font-medium">New screening</div>
+        <div className="text-fg-subtle text-[12px]">⌘N</div>
+      </button>
+    </form>
   );
 }
 

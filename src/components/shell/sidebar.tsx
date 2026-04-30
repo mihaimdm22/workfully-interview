@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { startNewScreening } from "@/app/actions";
 import type { Verdict } from "@/lib/domain/verdict-style";
 import { VerdictDot } from "@/components/ui/pill";
 
@@ -27,15 +28,17 @@ export function Sidebar({ rows, activeId }: SidebarProps) {
       </div>
 
       <div className="px-3 pb-3">
-        <Link
-          href="/screening/new"
-          className="bg-primary text-primary-fg flex w-full items-center justify-center gap-2 rounded-xl px-3.5 py-2.5 text-[14px] font-medium transition-opacity hover:opacity-90"
-        >
-          + New screening
-          <span className="ml-2 rounded border border-white/15 bg-white/10 px-1.5 py-0.5 font-mono text-[10px] text-white/75 dark:border-black/15 dark:bg-black/10 dark:text-black/75">
-            ⌘N
-          </span>
-        </Link>
+        <form action={startNewScreening}>
+          <button
+            type="submit"
+            className="bg-primary text-primary-fg flex w-full items-center justify-center gap-2 rounded-xl px-3.5 py-2.5 text-[14px] font-medium transition-opacity hover:opacity-90"
+          >
+            + New screening
+            <span className="ml-2 rounded border border-white/15 bg-white/10 px-1.5 py-0.5 font-mono text-[10px] text-white/75 dark:border-black/15 dark:bg-black/10 dark:text-black/75">
+              ⌘N
+            </span>
+          </button>
+        </form>
       </div>
 
       <SidebarSection title="Recent" count={rows.length} />
