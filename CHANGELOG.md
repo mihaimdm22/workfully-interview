@@ -2,6 +2,12 @@
 
 All notable changes to the Workfully Screening Bot will be documented in this file.
 
+## [0.3.1.2] - 2026-04-30
+
+### Changed
+
+- **Walkthrough author card contact email** swapped from `partnerships@pump.vc` to `david@basetool.ai`. One-file change to `src/app/walkthrough/_components/author-card.tsx` (mailto link + visible label).
+
 ## [0.3.1.1] - 2026-04-30
 
 ### Fixed
