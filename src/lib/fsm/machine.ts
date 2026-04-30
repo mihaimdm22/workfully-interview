@@ -172,6 +172,15 @@ export const botMachine = setup({
           target: "screening",
           actions: "setMissing",
         },
+        // Idle accepts RESET / CANCEL so callers can dispatch unconditionally
+        // without checking state first. Concretely: the "+ New screening"
+        // server action sends RESET regardless of current state; from idle
+        // we still want context.error wiped (e.g. after a timed-out evaluation
+        // the FSM lands in idle with the error string set, and renderReply
+        // would otherwise prefix the next bot reply with "Sorry, the screening
+        // failed: …").
+        RESET: { actions: "clearScreening" },
+        CANCEL: { actions: "clearScreening" },
       },
     },
 
