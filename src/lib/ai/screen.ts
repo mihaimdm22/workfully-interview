@@ -30,7 +30,16 @@ import {
  *                           in row by row.
  */
 
-const DEFAULT_MODEL = "anthropic/claude-sonnet-4.6";
+/**
+ * Default model. Haiku 4.5 is ~3–5× faster than Sonnet on structured output
+ * with negligible verdict-quality loss for our schema, so a fresh demo run
+ * lands inside the FSM timeout reliably. The settings modal lets the user
+ * pick anything else from the OpenRouter allowlist; `OPENROUTER_MODEL` env
+ * still overrides everything for ops-driven swaps (ADR 0004).
+ */
+const DEFAULT_MODEL = "anthropic/claude-haiku-4.5";
+const DEFAULT_MAX_RETRIES = 0;
+const DEFAULT_TEMPERATURE = 0.2;
 
 interface ScreenInput {
   jobDescription: string;
@@ -46,6 +55,15 @@ export interface ScreenOutput {
 interface ScreenDeps {
   model?: LanguageModel;
   modelId?: string;
+  /**
+   * Number of corrective retries the AI SDK performs when the model emits
+   * an object that fails schema validation. Each retry costs a full
+   * roundtrip. Defaults to 0 — schema misses are rare on capable models,
+   * and retries can blow a tight FSM timeout budget.
+   */
+  maxRetries?: number;
+  /** Sampling temperature 0..1. Defaults to 0.2 for verdict consistency. */
+  temperature?: number;
   /**
    * Cancellation signal. The orchestrator passes the AbortSignal that
    * XState's `fromPromise` exposes to the invoked actor so that when the
@@ -103,14 +121,20 @@ export async function screen(
 ): Promise<ScreenOutput> {
   validateInputs(input);
 
+  const modelId = deps.modelId ?? process.env.OPENROUTER_MODEL ?? DEFAULT_MODEL;
+
   // Test escape hatch — used by E2E so we don't burn API credits or depend on
   // network reachability in CI. Never set in production. See docs/adr/0005-testing.md.
+  // Echoes the resolved modelId so the verdict UI reflects the user's
+  // settings choice end-to-end (the alternative — hardcoding "fake/local" —
+  // would mask wiring bugs the E2E is supposed to catch).
   if (process.env.WORKFULLY_FAKE_AI === "1" && !deps.model) {
-    return fakeScreen(input);
+    return fakeScreen(input, modelId);
   }
 
-  const modelId = deps.modelId ?? process.env.OPENROUTER_MODEL ?? DEFAULT_MODEL;
   const model = deps.model ?? openrouter(modelId);
+  const maxRetries = deps.maxRetries ?? DEFAULT_MAX_RETRIES;
+  const temperature = deps.temperature ?? DEFAULT_TEMPERATURE;
 
   const startedAt = Date.now();
   const { object } = await generateObject({
@@ -120,8 +144,8 @@ export async function screen(
     schemaDescription: "Structured candidate-vs-role fit assessment",
     system: SYSTEM_PROMPT,
     prompt: buildPrompt(input),
-    temperature: 0.2,
-    maxRetries: 2,
+    temperature,
+    maxRetries,
     abortSignal: deps.signal,
   });
   const latencyMs = Date.now() - startedAt;
@@ -143,14 +167,17 @@ export async function screenStreaming(
 ): Promise<ScreenOutput> {
   validateInputs(input);
 
+  const modelId = deps.modelId ?? process.env.OPENROUTER_MODEL ?? DEFAULT_MODEL;
+
   // Fake AI: simulate streaming with timed partial emits so the demo
   // experience is identical even without burning API credits.
   if (process.env.WORKFULLY_FAKE_AI === "1" && !deps.model) {
-    return fakeScreenStreaming(input, deps);
+    return fakeScreenStreaming(input, deps, modelId);
   }
 
-  const modelId = deps.modelId ?? process.env.OPENROUTER_MODEL ?? DEFAULT_MODEL;
   const model = deps.model ?? openrouter(modelId);
+  const maxRetries = deps.maxRetries ?? DEFAULT_MAX_RETRIES;
+  const temperature = deps.temperature ?? DEFAULT_TEMPERATURE;
 
   const startedAt = Date.now();
   const { partialObjectStream, object } = streamObject({
@@ -160,8 +187,8 @@ export async function screenStreaming(
     schemaDescription: "Structured candidate-vs-role fit assessment",
     system: SYSTEM_PROMPT,
     prompt: buildPrompt(input),
-    temperature: 0.2,
-    maxRetries: 2,
+    temperature,
+    maxRetries,
     abortSignal: deps.signal,
   });
 
@@ -226,9 +253,9 @@ function buildFakeResult(input: ScreenInput): ScreeningResult {
   };
 }
 
-function fakeScreen(input: ScreenInput): ScreenOutput {
+function fakeScreen(input: ScreenInput, modelId: string): ScreenOutput {
   return {
-    model: "fake/local",
+    model: modelId,
     latencyMs: 1,
     result: buildFakeResult(input),
   };
@@ -247,6 +274,7 @@ function fakeScreen(input: ScreenInput): ScreenOutput {
 async function fakeScreenStreaming(
   input: ScreenInput,
   deps: StreamingDeps,
+  modelId: string,
 ): Promise<ScreenOutput> {
   const final = buildFakeResult(input);
   const onPartial = deps.onPartial;
@@ -281,7 +309,7 @@ async function fakeScreenStreaming(
   const latencyMs = Date.now() - startedAt;
 
   return {
-    model: "fake/local",
+    model: modelId,
     latencyMs,
     result: final,
   };

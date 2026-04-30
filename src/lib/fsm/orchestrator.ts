@@ -15,6 +15,10 @@ import {
   updateConversationSnapshotIfVersion,
 } from "@/lib/db/repositories";
 import { screen, screenStreaming, type ScreenOutput } from "@/lib/ai/screen";
+import {
+  resolveScreenConfig,
+  type ResolvedScreenConfig,
+} from "@/lib/ai/resolve-config";
 import { createLogger, stateString } from "@/lib/log";
 import type { ScreeningResult } from "@/lib/domain/screening";
 
@@ -73,6 +77,13 @@ interface RequestContext {
    * this null and the actor uses `screen()`.
    */
   onPartial: ((partial: Partial<ScreeningResult>) => void) | null;
+  /**
+   * Resolved AI config for this dispatch — model, retries, temperature,
+   * timeout. Read once at the top of `dispatchInternal` and threaded into
+   * the screening actor + FSM context. Null on read-only paths
+   * (`startConversation`, `loadConversation`) where no AI call happens.
+   */
+  config: ResolvedScreenConfig | null;
 }
 
 /**
@@ -91,12 +102,21 @@ function machineForRequest(ctx: RequestContext) {
         ScreeningResult,
         { jobDescription: string; cv: string }
       >(async ({ input, signal }) => {
+        // The dispatch path always sets ctx.config before running the actor;
+        // null only happens on read-only paths that don't reach this code.
+        const cfg = ctx.config;
+        const screenDeps = {
+          signal,
+          modelId: cfg?.model,
+          maxRetries: cfg?.maxRetries,
+          temperature: cfg?.temperature,
+        };
         const out: ScreenOutput = ctx.onPartial
           ? await screenStreaming(input, {
-              signal,
+              ...screenDeps,
               onPartial: ctx.onPartial,
             })
-          : await screen(input, { signal });
+          : await screen(input, screenDeps);
         ctx.meta.lastScreen = { model: out.model, latencyMs: out.latencyMs };
         return out.result;
       }),
@@ -106,8 +126,9 @@ function machineForRequest(ctx: RequestContext) {
 
 function newRequestContext(
   onPartial: RequestContext["onPartial"] = null,
+  config: ResolvedScreenConfig | null = null,
 ): RequestContext {
-  return { meta: { lastScreen: null }, onPartial };
+  return { meta: { lastScreen: null }, onPartial, config };
 }
 
 /**
@@ -128,6 +149,31 @@ function migrateLegacySnapshot(raw: PersistedSnapshot): PersistedSnapshot {
     return { ...raw, value: { screening: "gathering" } };
   }
   return raw;
+}
+
+/**
+ * Stamps the freshly resolved evaluation timeout into a persisted snapshot's
+ * context before rehydration. Lets a settings-modal change take effect on
+ * the next dispatch without touching the rest of the snapshot. Legacy
+ * snapshots lacked the field entirely; new dispatches always carry it.
+ */
+function withFreshTimeout(
+  snap: PersistedSnapshot,
+  evalTimeoutMs: number,
+): PersistedSnapshot {
+  const ctx: Record<string, unknown> =
+    snap.context && typeof snap.context === "object"
+      ? (snap.context as Record<string, unknown>)
+      : {};
+  // Cast through `unknown` because TS narrows the spread literal and drops
+  // the index signature, even though the runtime shape is correct (the
+  // input snapshot's context is already structurally valid; we're only
+  // stamping `evalTimeoutMs` on top).
+  const merged = {
+    ...ctx,
+    evalTimeoutMs,
+  } as unknown as PersistedSnapshot["context"];
+  return { ...snap, context: merged };
 }
 
 /**
@@ -197,7 +243,18 @@ async function dispatchInternal(
   if (!isPersistedSnapshot(convo.fsmSnapshot)) {
     throw new Error("Persisted FSM snapshot is malformed");
   }
-  const persistedInput = migrateLegacySnapshot(convo.fsmSnapshot);
+  // Resolve runtime config (model + timeout + retries + temperature) once per
+  // dispatch. The resolver layers env > db > default, so settings-modal
+  // changes apply to the *next* screening even if mid-flight ones use
+  // whatever was set when they started.
+  const config = await resolveScreenConfig();
+  // Override the persisted snapshot's evalTimeoutMs with the freshly
+  // resolved value so an in-flight settings change reaches the FSM. New
+  // snapshots already carry the field; legacy ones get it implanted here.
+  const persistedInput = withFreshTimeout(
+    migrateLegacySnapshot(convo.fsmSnapshot),
+    config.timeoutMs,
+  );
   const expectedVersion = convo.version;
 
   // Append user message first so it shows up even if the AI call later throws.
@@ -211,10 +268,10 @@ async function dispatchInternal(
     });
   }
 
-  const ctx = newRequestContext(onPartial);
+  const ctx = newRequestContext(onPartial, config);
   const machine = machineForRequest(ctx);
   const actor = createActor(machine, {
-    input: { conversationId },
+    input: { conversationId, evalTimeoutMs: config.timeoutMs },
     // XState's snapshot generic uses inferred internal types; our zod-validated
     // PersistedSnapshot is structurally identical, so we cast at the boundary.
     snapshot: persistedInput as Parameters<

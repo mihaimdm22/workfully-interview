@@ -93,17 +93,18 @@ state pills. Tabular-nums on every number. Font-feature-settings: `"ss01", "cv11
 
 ## Components
 
-| Component                           | Token primitives                          | Where it lives                                                                 |
-| ----------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------ |
-| `<Pill verdict>`                    | `-bg`, `-ring`, semantic color            | sidebar dot, dashboard card, screening header, OG card                         |
-| `<ScoreDisplay value size verdict>` | mono, tabular-nums, semantic color        | sidebar row (sm), dashboard card (md), screening header (hero), OG card (hero) |
-| `<RequirementList>`                 | `--success-bg`, `--danger-bg`, mono check | screening detail, share page                                                   |
-| `<BulletBlock tone>`                | semantic color on `::before` bullet       | screening detail, share page                                                   |
-| `<Recommendation>`                  | `--muted`, `--border`                     | screening detail (writeable), share page (read-only)                           |
-| `<ShareRow>`                        | `--border`, `--font-mono`                 | screening detail only                                                          |
-| `<Sidebar>`                         | layout tokens, `--font-sans`              | workspace shell                                                                |
-| `<Topbar>`                          | layout tokens, `--muted` (search)         | workspace shell, screening detail                                              |
-| `<ThemeToggle>`                     | `--border`, `--fg-muted`                  | topbar                                                                         |
+| Component                                | Token primitives                                                             | Where it lives                                                                 |
+| ---------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `<Pill verdict>`                         | `-bg`, `-ring`, semantic color                                               | sidebar dot, dashboard card, screening header, OG card                         |
+| `<ScoreDisplay value size verdict>`      | mono, tabular-nums, semantic color                                           | sidebar row (sm), dashboard card (md), screening header (hero), OG card (hero) |
+| `<RequirementList>`                      | `--success-bg`, `--danger-bg`, mono check                                    | screening detail, share page                                                   |
+| `<BulletBlock tone>`                     | semantic color on `::before` bullet                                          | screening detail, share page                                                   |
+| `<Recommendation>`                       | `--muted`, `--border`                                                        | screening detail (writeable), share page (read-only)                           |
+| `<ShareRow>`                             | `--border`, `--font-mono`                                                    | screening detail only                                                          |
+| `<Sidebar>`                              | layout tokens, `--font-sans`                                                 | workspace shell                                                                |
+| `<Topbar>`                               | layout tokens, `--muted` (search)                                            | workspace shell, screening detail                                              |
+| `<ThemeToggle>`                          | `--border`, `--fg-muted`                                                     | topbar                                                                         |
+| `<SettingsLauncher>` / `<SettingsModal>` | `--bg-elevated`, `--r-xl`, `--shadow-pop`, `--accent` (focus + slider track) | topbar gear icon → modal (desktop) / bottom sheet (`< 640px`)                  |
 
 ## Responsive breakpoints
 

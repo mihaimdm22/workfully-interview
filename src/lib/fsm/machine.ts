@@ -33,7 +33,8 @@ import type { ScreeningResult } from "@/lib/domain/screening";
 
 export const EVAL_TIMEOUT_MS = 60_000;
 
-const TIMEOUT_ERROR_MESSAGE = "AI took longer than 60 seconds. Try again.";
+const TIMEOUT_ERROR_MESSAGE = (ms: number) =>
+  `AI took longer than ${Math.round(ms / 1000)} seconds. Try again.`;
 
 interface BotContext {
   conversationId: string;
@@ -41,6 +42,14 @@ interface BotContext {
   cv?: string;
   result?: ScreeningResult;
   error?: string;
+  /**
+   * Per-actor evaluation timeout. Read by the `evalTimeout` delay so users can
+   * tune it from the settings modal at runtime. Always populated on creation
+   * (defaults to `EVAL_TIMEOUT_MS`); legacy snapshots without it fall through
+   * to the same default at delay-time. Marked optional so persisted-snapshot
+   * casts in older test fixtures don't have to hand-set it.
+   */
+  evalTimeoutMs?: number;
 }
 
 export type BotEvent =
@@ -54,6 +63,8 @@ export type BotEvent =
 
 interface BotInput {
   conversationId: string;
+  /** Optional override; defaults to `EVAL_TIMEOUT_MS` (60s) when unset. */
+  evalTimeoutMs?: number;
 }
 
 interface ScreeningActorInput {
@@ -122,11 +133,20 @@ export const botMachine = setup({
     hasBoth: ({ context }) =>
       !!context.jobDescription?.trim() && !!context.cv?.trim(),
   },
+  delays: {
+    /**
+     * Per-actor evaluation timeout. Reads from context so the settings modal
+     * can change the budget at runtime. Falls back to `EVAL_TIMEOUT_MS`
+     * defensively in case a legacy snapshot rehydrates without the field.
+     */
+    evalTimeout: ({ context }) => context.evalTimeoutMs ?? EVAL_TIMEOUT_MS,
+  },
 }).createMachine({
   id: "bot",
   initial: "idle",
   context: ({ input }) => ({
     conversationId: input.conversationId,
+    evalTimeoutMs: input.evalTimeoutMs ?? EVAL_TIMEOUT_MS,
   }),
   states: {
     idle: {
@@ -213,12 +233,18 @@ export const botMachine = setup({
           // `evaluating` and stops the invoked actor — which aborts its
           // signal, which (after the orchestrator forwards it) aborts the
           // in-flight `generateObject` HTTP call to OpenRouter. No
-          // orchestrator-level race window.
+          // orchestrator-level race window. The delay is dynamic so the
+          // user-tuned timeout from the settings modal applies per-call.
           after: {
-            [EVAL_TIMEOUT_MS]: {
+            evalTimeout: {
               target: "#bot.idle",
               actions: [
-                assign({ error: TIMEOUT_ERROR_MESSAGE }),
+                assign({
+                  error: ({ context }) =>
+                    TIMEOUT_ERROR_MESSAGE(
+                      context.evalTimeoutMs ?? EVAL_TIMEOUT_MS,
+                    ),
+                }),
                 "clearScreeningInputsKeepError",
               ],
             },

@@ -28,6 +28,7 @@ function makeActor(opts?: {
     jobDescription: string;
     cv: string;
   }) => Promise<ScreeningResult>;
+  evalTimeoutMs?: number;
 }) {
   const screenImpl = opts?.screenImpl ?? (async () => FAKE_RESULT);
   const machine = botMachine.provide({
@@ -38,7 +39,14 @@ function makeActor(opts?: {
       >(async ({ input }) => screenImpl(input)),
     },
   });
-  return createActor(machine, { input: { conversationId: "test-convo" } });
+  return createActor(machine, {
+    input: {
+      conversationId: "test-convo",
+      ...(opts?.evalTimeoutMs !== undefined
+        ? { evalTimeoutMs: opts.evalTimeoutMs }
+        : {}),
+    },
+  });
 }
 
 describe("botMachine", () => {
@@ -280,6 +288,33 @@ describe("botMachine", () => {
       expect(snap.context.error).toMatch(/longer than 60 seconds/i);
       expect(snap.context.jobDescription).toBeUndefined();
       expect(snap.context.cv).toBeUndefined();
+    });
+
+    it("honors a per-actor `evalTimeoutMs` from input (settings modal value)", async () => {
+      vi.useFakeTimers();
+      const customTimeout = 15_000;
+      const actor = makeActor({
+        evalTimeoutMs: customTimeout,
+        screenImpl: () =>
+          new Promise(() => {
+            /* never resolves */
+          }),
+      });
+      actor.start();
+      actor.send({ type: "PROVIDE_JD", text: "JD" });
+      actor.send({ type: "PROVIDE_CV", text: "CV" });
+      expect(actor.getSnapshot().value).toEqual({ screening: "evaluating" });
+
+      // Just below the custom timeout — should still be evaluating.
+      await vi.advanceTimersByTimeAsync(customTimeout - 1);
+      expect(actor.getSnapshot().value).toEqual({ screening: "evaluating" });
+
+      // Cross the threshold — error message reflects the custom budget,
+      // not the default 60s.
+      await vi.advanceTimersByTimeAsync(2);
+      const snap = actor.getSnapshot();
+      expect(snap.value).toBe("idle");
+      expect(snap.context.error).toMatch(/longer than 15 seconds/i);
     });
 
     it("does NOT fire `after` if screen resolves first", async () => {
