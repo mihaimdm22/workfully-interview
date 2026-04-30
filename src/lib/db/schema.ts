@@ -8,6 +8,7 @@ import {
   index,
   varchar,
   integer,
+  real,
 } from "drizzle-orm/pg-core";
 import type { ScreeningResult } from "@/lib/domain/screening";
 import type { PersistedSnapshot } from "@/lib/fsm/snapshot";
@@ -108,6 +109,23 @@ export const shareLinks = pgTable("share_links", {
     .default(sql`now()`),
 });
 
+/**
+ * Singleton settings row. The whole app reads `app_settings.id = 'singleton'`
+ * for runtime AI knobs (model, timeout, retries, temperature). Migration
+ * 0003 seeds the row with safe defaults so the app boots before anyone opens
+ * the settings modal. Single-tenant by design — see CHANGELOG and README.
+ */
+export const appSettings = pgTable("app_settings", {
+  id: varchar("id", { length: 16 }).primaryKey(),
+  model: varchar("model", { length: 128 }).notNull(),
+  timeoutMs: integer("timeout_ms").notNull(),
+  maxRetries: integer("max_retries").notNull(),
+  temperature: real("temperature").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .default(sql`now()`),
+});
+
 export type Conversation = typeof conversations.$inferSelect;
 export type NewConversation = typeof conversations.$inferInsert;
 export type Message = typeof messages.$inferSelect;
@@ -116,3 +134,5 @@ export type Screening = typeof screenings.$inferSelect;
 export type NewScreening = typeof screenings.$inferInsert;
 export type ShareLink = typeof shareLinks.$inferSelect;
 export type NewShareLink = typeof shareLinks.$inferInsert;
+export type AppSettings = typeof appSettings.$inferSelect;
+export type NewAppSettings = typeof appSettings.$inferInsert;

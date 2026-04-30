@@ -82,6 +82,17 @@ codepath that CI runs for E2E.
   `screen()` call for a deterministic stub. CI runs Playwright against this. Real
   model behavior is covered by the schema-validated unit tests on the screening
   service boundary.
+- **Runtime AI knobs without redeploying.** A topbar gear opens a settings modal —
+  pick from a server-side allowlist of OpenRouter models, tune the FSM evaluation
+  timeout, max retries, and temperature. The model dropdown live-fetches OpenRouter's
+  `/api/v1/models` and intersects the response with a curated allowlist (so every
+  option is one we trust for structured output and OpenRouter is currently serving),
+  with a 1h in-process cache and a hardcoded fallback. Settings are persisted in a
+  singleton `app_settings` Postgres row. Precedence at request time is
+  `OPENROUTER_MODEL` env var → DB → hardcoded default — env still wins, preserving
+  the ops-driven swap promise from ADR 0004. The FSM evaluation timeout is now a
+  per-actor `delays.evalTimeout` reading from context, so settings changes apply on
+  the next dispatch.
 
 ---
 

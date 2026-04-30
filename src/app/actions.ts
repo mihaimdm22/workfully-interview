@@ -14,7 +14,14 @@ import {
   ConcurrentModificationError,
   getOrCreateShareLink,
   getScreeningById,
+  saveAppSettings,
 } from "@/lib/db/repositories";
+import {
+  appSettingsSchema,
+  type AppSettingsValue,
+  type ModelOption,
+} from "@/lib/domain/settings";
+import { listModels, type ListModelsSource } from "@/lib/ai/openrouter-models";
 import type { BotEvent } from "@/lib/fsm/machine";
 
 const MAX_TEXT_LENGTH = 30_000;
@@ -69,6 +76,50 @@ export async function ensureConversation(): Promise<string> {
 export async function resetConversation(): Promise<void> {
   await clearConversationCookie();
   redirect("/");
+}
+
+/**
+ * Settings modal — load the OpenRouter model list (with cache + fallback).
+ * Called from the client modal on first open. Always resolves; failure modes
+ * are encoded in `source` ("fallback") so the UI can show a hint.
+ */
+export async function loadModelsAction(): Promise<{
+  models: ModelOption[];
+  source: ListModelsSource;
+}> {
+  return listModels();
+}
+
+/**
+ * Settings modal — persist the singleton settings row. Validates with the
+ * domain Zod schema (incl. allowlist check on `model`) before any DB write.
+ * Revalidates `/` so the next page render picks up the new defaults — and
+ * because the topbar reads `getAppSettings()` per page, the gear menu will
+ * pre-fill with the new values immediately.
+ */
+export async function saveSettingsAction(
+  next: AppSettingsValue,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const parsed = appSettingsSchema.safeParse(next);
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    return {
+      ok: false,
+      error: first
+        ? `${first.path.join(".")}: ${first.message}`
+        : "Invalid settings",
+    };
+  }
+  try {
+    await saveAppSettings(parsed.data);
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+  revalidatePath("/", "layout");
+  return { ok: true };
 }
 
 /**

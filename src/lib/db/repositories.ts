@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import { randomBytes } from "node:crypto";
 import { getDb } from "./client";
 import {
+  appSettings,
   conversations,
   messages,
   screenings,
@@ -17,6 +18,11 @@ import {
 } from "./schema";
 import type { PersistedSnapshot } from "@/lib/fsm/snapshot";
 import type { ScreeningResult } from "@/lib/domain/screening";
+import {
+  DEFAULT_SETTINGS,
+  SETTINGS_SINGLETON_ID,
+  type AppSettingsValue,
+} from "@/lib/domain/settings";
 
 /**
  * Thrown when an optimistic-concurrency compare-and-swap fails: the row's
@@ -312,6 +318,66 @@ export async function getShareLinkForScreening(
     .where(eq(shareLinks.screeningId, screeningId))
     .limit(1);
   return rows[0] ?? null;
+}
+
+/**
+ * Read the singleton settings row. Falls back to `DEFAULT_SETTINGS` if the
+ * row is missing — that should only happen if migration 0003 didn't run, but
+ * the fallback keeps the app booting in degraded mode rather than crashing.
+ * The caller is `resolveScreenConfig`, which then layers env-var overrides.
+ */
+export async function getAppSettings(): Promise<AppSettingsValue> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(appSettings)
+    .where(eq(appSettings.id, SETTINGS_SINGLETON_ID))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return { ...DEFAULT_SETTINGS };
+  return {
+    model: row.model,
+    timeoutMs: row.timeoutMs,
+    maxRetries: row.maxRetries,
+    temperature: row.temperature,
+  };
+}
+
+/**
+ * Upsert the singleton settings row. The Zod validation lives at the action
+ * boundary (`saveSettingsAction`); this layer trusts its input.
+ */
+export async function saveAppSettings(
+  next: AppSettingsValue,
+): Promise<AppSettingsValue> {
+  const db = getDb();
+  const [row] = await db
+    .insert(appSettings)
+    .values({
+      id: SETTINGS_SINGLETON_ID,
+      model: next.model,
+      timeoutMs: next.timeoutMs,
+      maxRetries: next.maxRetries,
+      temperature: next.temperature,
+    })
+    .onConflictDoUpdate({
+      target: appSettings.id,
+      set: {
+        model: next.model,
+        timeoutMs: next.timeoutMs,
+        maxRetries: next.maxRetries,
+        temperature: next.temperature,
+        updatedAt: new Date(),
+      },
+    })
+    .returning();
+  if (!row) throw new Error("Failed to upsert app settings");
+  return {
+    model: row.model,
+    timeoutMs: row.timeoutMs,
+    maxRetries: row.maxRetries,
+    temperature: row.temperature,
+  };
 }
 
 /**
