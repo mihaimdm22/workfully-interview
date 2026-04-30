@@ -236,8 +236,15 @@ test.describe("Screening flow", () => {
     await Promise.all([newButton.click(), newButton.click().catch(() => {})]);
     await page.waitForURL(/\/screening\/new(\?.*)?$/, { timeout: 10_000 });
 
-    // No error toast / banner visible.
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    // No chat-stream error banner visible. Scope to <main> so dev-mode
+    // floating widgets (Next.js indicator, etc.) outside the app shell
+    // don't false-positive — only an in-app error banner should fail this.
+    await expect(page.locator("main").getByRole("alert")).toHaveCount(0);
+
+    // Positive: chat shows the fresh greeting (chat is in a healthy state).
+    await expect(page.getByLabel("Chat transcript")).toContainText(
+      "I'm here to help",
+    );
 
     // Sidebar history still has the original screening.
     await expect(sidebar.getByText(/Test Candidate/i)).toBeVisible();
