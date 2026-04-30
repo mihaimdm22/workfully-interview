@@ -15,6 +15,8 @@ function msg(
 
 function makeResult(score: number): ScreeningResult {
   return {
+    candidateName: "Jane Doe",
+    role: "Senior Backend Engineer",
     verdict: "strong",
     score,
     summary: "stub",

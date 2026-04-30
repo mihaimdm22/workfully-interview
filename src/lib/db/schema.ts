@@ -92,9 +92,27 @@ export const screenings = pgTable(
   (table) => [index("screenings_conversation_idx").on(table.conversationId)],
 );
 
+/**
+ * Public share links. One row per shared screening (UNIQUE on screeningId).
+ * Slug is base32 of 16 random bytes — 128 bits, unguessable. Cascade delete
+ * means a deleted screening drops its share link too — no dangling slugs.
+ */
+export const shareLinks = pgTable("share_links", {
+  slug: varchar("slug", { length: 32 }).primaryKey(),
+  screeningId: varchar("screening_id", { length: 32 })
+    .notNull()
+    .unique()
+    .references(() => screenings.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .default(sql`now()`),
+});
+
 export type Conversation = typeof conversations.$inferSelect;
 export type NewConversation = typeof conversations.$inferInsert;
 export type Message = typeof messages.$inferSelect;
 export type NewMessage = typeof messages.$inferInsert;
 export type Screening = typeof screenings.$inferSelect;
 export type NewScreening = typeof screenings.$inferInsert;
+export type ShareLink = typeof shareLinks.$inferSelect;
+export type NewShareLink = typeof shareLinks.$inferInsert;

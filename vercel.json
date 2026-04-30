@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "src/app/s/[slug]/pdf/download/route.ts": {
+      "memory": 1024,
+      "maxDuration": 30
+    }
+  }
+}

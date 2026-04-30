@@ -26,7 +26,7 @@ Format: `type(scope): subject`
 
 **Types:** feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
 
-**Scopes:** fsm, ai, db, ui, domain, e2e, ci, deps, docs, config
+**Scopes:** fsm, ai, db, ui, domain, e2e, ci, deps, docs, config, orchestrator, proxy, actions, log
 
 Examples:
 

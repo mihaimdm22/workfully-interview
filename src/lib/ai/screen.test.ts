@@ -6,6 +6,8 @@ import type { ScreeningResult } from "@/lib/domain/screening";
 type DoGenerateResult = Awaited<ReturnType<MockLanguageModelV3["doGenerate"]>>;
 
 const VALID_OBJECT: ScreeningResult = {
+  candidateName: "Jane Doe",
+  role: "Senior Backend Engineer",
   verdict: "strong",
   score: 90,
   summary: "Senior backend engineer with strong stack alignment.",

@@ -1,5 +1,5 @@
 import "server-only";
-import { generateObject, type LanguageModel } from "ai";
+import { generateObject, streamObject, type LanguageModel } from "ai";
 import { openrouter } from "@openrouter/ai-sdk-provider";
 import {
   screeningResultSchema,
@@ -18,6 +18,16 @@ import {
  * Routed through OpenRouter so the same call works against any vendor: the
  * default targets Claude Sonnet 4.6 (`anthropic/claude-sonnet-4.6`), but
  * `OPENROUTER_MODEL` can point at any OpenRouter-supported model id.
+ *
+ * Two entrypoints:
+ *   - `screen()`        — atomic. Returns once the full ScreeningResult is ready.
+ *                         Used by the FSM screening actor (the FSM only commits
+ *                         on the final result).
+ *   - `screenStreaming()` — calls onPartial for each partial as the model
+ *                           streams. Resolves with the same final ScreeningResult.
+ *                           Used by the SSE route handler so the client sees
+ *                           the verdict pill commit early, then must-haves fill
+ *                           in row by row.
  */
 
 const DEFAULT_MODEL = "anthropic/claude-sonnet-4.6";
@@ -47,6 +57,15 @@ interface ScreenDeps {
   signal?: AbortSignal;
 }
 
+interface StreamingDeps extends ScreenDeps {
+  /**
+   * Called for each partial result as the model streams. Caller is expected
+   * to forward partials to the client via SSE. This is best-effort — partials
+   * may be incomplete and may not include every field on every tick.
+   */
+  onPartial?: (partial: Partial<ScreeningResult>) => void;
+}
+
 const SYSTEM_PROMPT = `You are a senior technical recruiter at a B2B SaaS company.
 Your job is to evaluate one candidate against one job description and produce a structured fit assessment.
 
@@ -73,12 +92,16 @@ function buildPrompt({ jobDescription, cv }: ScreenInput): string {
   ].join("\n");
 }
 
+function validateInputs(input: ScreenInput) {
+  if (!input.jobDescription.trim()) throw new Error("Job description is empty");
+  if (!input.cv.trim()) throw new Error("CV is empty");
+}
+
 export async function screen(
   input: ScreenInput,
   deps: ScreenDeps = {},
 ): Promise<ScreenOutput> {
-  if (!input.jobDescription.trim()) throw new Error("Job description is empty");
-  if (!input.cv.trim()) throw new Error("CV is empty");
+  validateInputs(input);
 
   // Test escape hatch — used by E2E so we don't burn API credits or depend on
   // network reachability in CI. Never set in production. See docs/adr/0005-testing.md.
@@ -111,6 +134,55 @@ export async function screen(
 }
 
 /**
+ * Streaming sibling of `screen()`. Same final result, plus partials emitted
+ * via `onPartial` as the model streams tokens.
+ */
+export async function screenStreaming(
+  input: ScreenInput,
+  deps: StreamingDeps = {},
+): Promise<ScreenOutput> {
+  validateInputs(input);
+
+  // Fake AI: simulate streaming with timed partial emits so the demo
+  // experience is identical even without burning API credits.
+  if (process.env.WORKFULLY_FAKE_AI === "1" && !deps.model) {
+    return fakeScreenStreaming(input, deps);
+  }
+
+  const modelId = deps.modelId ?? process.env.OPENROUTER_MODEL ?? DEFAULT_MODEL;
+  const model = deps.model ?? openrouter(modelId);
+
+  const startedAt = Date.now();
+  const { partialObjectStream, object } = streamObject({
+    model,
+    schema: screeningResultSchema,
+    schemaName: "ScreeningResult",
+    schemaDescription: "Structured candidate-vs-role fit assessment",
+    system: SYSTEM_PROMPT,
+    prompt: buildPrompt(input),
+    temperature: 0.2,
+    maxRetries: 2,
+    abortSignal: deps.signal,
+  });
+
+  for await (const partial of partialObjectStream) {
+    deps.onPartial?.(partial as Partial<ScreeningResult>);
+  }
+
+  // `object` resolves with the final, schema-validated result OR throws if
+  // the stream ended without a complete object. Either path fits the FSM's
+  // existing happy/error contract — same behavior as the atomic `screen()`.
+  const finalObject = await object;
+  const latencyMs = Date.now() - startedAt;
+
+  return {
+    result: finalObject,
+    model: modelId,
+    latencyMs,
+  };
+}
+
+/**
  * Test markers — drop these into a CV string to force a specific verdict
  * from the fake AI. Stable contract: callers (E2E specs, unit tests) opt into
  * a verdict explicitly, so updating fixture content can never silently flip
@@ -121,39 +193,96 @@ export const FAKE_VERDICT_MARKERS = {
   wrongRole: "[TEST_VERDICT_WRONG_ROLE]",
 } as const;
 
-function fakeScreen(input: ScreenInput): ScreenOutput {
-  // Explicit markers > heuristics. Default is `strong` so the happy path
-  // requires no marker.
+function buildFakeResult(input: ScreenInput): ScreeningResult {
   const isWrongRole = input.cv.includes(FAKE_VERDICT_MARKERS.wrongRole);
   const isWeak = !isWrongRole && input.cv.includes(FAKE_VERDICT_MARKERS.weak);
   const verdict = isWrongRole ? "wrong_role" : isWeak ? "weak" : "strong";
   const score = isWrongRole ? 8 : isWeak ? 38 : 90;
   return {
+    candidateName: "Test Candidate",
+    role: "Senior Backend Engineer",
+    verdict,
+    score,
+    summary: `[FAKE] ${verdict} match. This response is generated by the test harness, not Claude.`,
+    mustHaves: [
+      {
+        requirement: "4+ years backend experience",
+        matched: !isWeak && !isWrongRole,
+      },
+      { requirement: "TypeScript + Node.js", matched: !isWrongRole },
+    ],
+    niceToHaves: [],
+    strengths: isWrongRole ? [] : ["Concrete shipping experience"],
+    gaps: isWrongRole
+      ? ["Wrong profession"]
+      : isWeak
+        ? ["Years of experience"]
+        : [],
+    recommendation: isWrongRole
+      ? "Reject — wrong role."
+      : isWeak
+        ? "Decline for senior role; consider for junior pool."
+        : "Move forward to technical interview.",
+  };
+}
+
+function fakeScreen(input: ScreenInput): ScreenOutput {
+  return {
     model: "fake/local",
     latencyMs: 1,
-    result: {
-      verdict,
-      score,
-      summary: `[FAKE] ${verdict} match. This response is generated by the test harness, not Claude.`,
-      mustHaves: [
-        {
-          requirement: "4+ years backend experience",
-          matched: !isWeak && !isWrongRole,
-        },
-        { requirement: "TypeScript + Node.js", matched: !isWrongRole },
-      ],
-      niceToHaves: [],
-      strengths: isWrongRole ? [] : ["Concrete shipping experience"],
-      gaps: isWrongRole
-        ? ["Wrong profession"]
-        : isWeak
-          ? ["Years of experience"]
-          : [],
-      recommendation: isWrongRole
-        ? "Reject — wrong role."
-        : isWeak
-          ? "Decline for senior role; consider for junior pool."
-          : "Move forward to technical interview.",
-    },
+    result: buildFakeResult(input),
+  };
+}
+
+/**
+ * Simulates progressive reveal so a human running the demo against
+ * WORKFULLY_FAKE_AI=1 can SEE streaming behavior without paying for real AI.
+ * Emits partials with cumulative shape — each tick adds the next field —
+ * mirroring how `streamObject` reveals fields incrementally over real
+ * network roundtrips.
+ *
+ * Total simulated latency is ~2.5s. Live runs against Claude take 6–12s; the
+ * shape of the reveal is the same.
+ */
+async function fakeScreenStreaming(
+  input: ScreenInput,
+  deps: StreamingDeps,
+): Promise<ScreenOutput> {
+  const final = buildFakeResult(input);
+  const onPartial = deps.onPartial;
+
+  // Build the cumulative tick sequence. Each tick is a Partial<ScreeningResult>
+  // that adds one more field to the previous one. The order mirrors how the
+  // model commits fields during real streaming — verdict + score first, then
+  // summary, then must-haves row by row, then nice-to-haves / strengths / gaps,
+  // then recommendation.
+  const ticks: Array<{ delayMs: number; patch: Partial<ScreeningResult> }> = [
+    { delayMs: 200, patch: { candidateName: final.candidateName } },
+    { delayMs: 200, patch: { role: final.role } },
+    { delayMs: 200, patch: { verdict: final.verdict } },
+    { delayMs: 200, patch: { score: final.score } },
+    { delayMs: 350, patch: { summary: final.summary } },
+    { delayMs: 250, patch: { mustHaves: final.mustHaves.slice(0, 1) } },
+    { delayMs: 250, patch: { mustHaves: final.mustHaves } },
+    { delayMs: 200, patch: { niceToHaves: final.niceToHaves } },
+    { delayMs: 250, patch: { strengths: final.strengths } },
+    { delayMs: 250, patch: { gaps: final.gaps } },
+    { delayMs: 200, patch: { recommendation: final.recommendation } },
+  ];
+
+  const startedAt = Date.now();
+  let cumulative: Partial<ScreeningResult> = {};
+  for (const t of ticks) {
+    if (deps.signal?.aborted) throw new Error("aborted");
+    await new Promise((r) => setTimeout(r, t.delayMs));
+    cumulative = { ...cumulative, ...t.patch };
+    onPartial?.(cumulative);
+  }
+  const latencyMs = Date.now() - startedAt;
+
+  return {
+    model: "fake/local",
+    latencyMs,
+    result: final,
   };
 }
