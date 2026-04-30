@@ -2,6 +2,12 @@
 
 All notable changes to the Workfully Screening Bot will be documented in this file.
 
+## [0.3.2.0] - 2026-04-30
+
+### Fixed
+
+- **"+ New screening" now actually starts a fresh chat.** The button was a plain `<Link href="/screening/new">`, so clicking it just navigated to the same route and rehydrated the persistent `workfully_conversation_id` cookie via `ensureConversation()` — meaning the user landed back in their previous chat with all messages intact, not on a clean composer. New `startNewScreening()` server action in `src/app/actions.ts` clears the cookie before redirecting; the proxy then mints a fresh id on the next request and `ensureConversation` lands on a brand-new conversation row. Every primary "+ New screening" entry point — sidebar (`shell/sidebar.tsx`), dashboard topbar + empty-state CTA (`(workspace)/page.tsx`), dashboard grid tile (`screening-card.tsx`), command palette empty-state "Start one" link (`cmd-k-palette.tsx`), and walkthrough "+ Start a new screening" CTA (`walkthrough/_components/section-try-it.tsx`) — was converted from `<Link>` to `<form action={startNewScreening}>` so the click runs the cookie-clear before navigation. Walkthrough hero "Try it now →" left as a plain link (asserted on by `e2e/walkthrough.spec.ts:54-55`; first-time visitors hit it cookie-less anyway). New unit test in `src/app/actions.test.ts` mocks `next/navigation` + `@/lib/cookies` and verifies the action both clears the cookie and redirects to `/screening/new`.
+
 ## [0.3.1.2] - 2026-04-30
 
 ### Changed
