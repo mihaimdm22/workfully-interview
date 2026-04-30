@@ -44,7 +44,7 @@ describe("app_settings singleton", () => {
     const { getAppSettings } = await import("@/lib/db/repositories");
     const settings = await getAppSettings();
     expect(settings.model).toBe("anthropic/claude-haiku-4.5");
-    expect(settings.timeoutMs).toBe(60_000);
+    expect(settings.timeoutMs).toBe(120_000);
     expect(settings.maxRetries).toBe(0);
     expect(settings.temperature).toBeCloseTo(0.2, 5);
   });
