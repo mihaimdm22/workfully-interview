@@ -1,7 +1,9 @@
+import { Suspense } from "react";
 import { ensureConversation } from "@/app/actions";
 import { listRecentScreenings } from "@/lib/db/repositories";
 import { Sidebar, type SidebarRow } from "@/components/shell/sidebar";
 import { CmdKPalette, type SearchItem } from "@/components/cmd-k-palette";
+import { HistoryToast } from "@/components/history-toast";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +45,12 @@ export default async function WorkspaceLayout({
       <Sidebar rows={sidebarRows} />
       <div className="flex min-w-0 flex-col">{children}</div>
       <CmdKPalette items={searchItems} />
+      {/* useSearchParams() suspends during streaming SSR/PPR — wrap in
+          Suspense so the layout doesn't bail out of static rendering on
+          routes that don't use the toast. */}
+      <Suspense fallback={null}>
+        <HistoryToast />
+      </Suspense>
     </div>
   );
 }

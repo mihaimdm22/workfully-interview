@@ -2,6 +2,23 @@
 
 All notable changes to the Workfully Screening Bot will be documented in this file.
 
+## [0.3.3.0] - 2026-04-30
+
+### Fixed
+
+- **Sidebar history disappeared every time you clicked "+ New screening".** The button was clearing the conversation cookie so the proxy minted a fresh `conversations` row, which made `listRecentScreenings(conversationId, …)` return zero rows even though all your prior verdicts were still in the database. The fix keeps the cookie and instead deletes the current chat transcript + dispatches an FSM `RESET`, so the parent conversation row and its `screenings` rows survive. Sidebar now shows every verdict you've ever produced from this browser. Click any row to revisit. /autoplan dual-voice review (Codex + Claude subagent) rejected the original `workspace_id` schema-migration plan as the wrong abstraction before login exists, and the simpler "delete + RESET, keep the cookie" approach was unanimously preferred. Files: `src/app/actions.ts`, `src/lib/db/repositories.ts` (new `deleteMessagesForConversation` helper), `src/lib/fsm/machine.ts`, `e2e/screening.spec.ts`, `test/integration/messages.delete.test.ts` (new — verifies the FK CASCADE only fires on conversation delete, not message delete, so screenings survive). Note for shared computers: there's no longer a quasi-logout via "+ New screening" — the cookie persists. Tracked in TODOS.md to revisit when login lands.
+
+### Added
+
+- **Mid-evaluation confirmation prompt.** Clicking "+ New screening" while the AI is mid-stream used to silently abort the in-flight verdict — you'd lose ~30s of work with no warning. The new `<NewScreeningButton/>` client component reads `body.dataset.streaming` (published by `<ChatStream>` via a `useEffect`) and shows a `window.confirm()` if a screening is currently evaluating. Also disables the button via `useFormStatus().pending` so a fast double-click collapses to a single server round-trip. Files: `src/components/shell/new-screening-button.tsx` (new), `src/components/shell/sidebar.tsx`, `src/components/chat-stream.tsx`.
+- **First-run discoverability toast.** After your first "+ New screening" of the session, a small toast appears bottom-right: "Started a new screening. Your previous verdict is saved in the sidebar. Click any row to revisit." 4-second auto-dismiss with a manual `×` button, gated by a `localStorage` flag so it never shows twice. Reads the `?reset=1` query param the action redirect now appends, then strips it via `router.replace` so reloads stay clean. Files: `src/components/history-toast.tsx` (new), `src/app/(workspace)/layout.tsx` (mounts inside Suspense for `useSearchParams` compatibility).
+- **Sidebar row chevron-on-hover.** `›` reveals on hover to make rows read as nav entries instead of status displays. Reuses the existing footer pattern. ~3 lines.
+
+### Changed
+
+- **`idle.RESET` + `idle.CANCEL` now clear `context.error`.** Previously the FSM's `idle` state had no handler for these events. If a screening had landed in `idle` via `evaluating.onError` or the timeout `after` transition, `context.error` would survive subsequent dispatches, and `renderReply` would prefix the next bot reply with `"Sorry, the screening failed: …"`. The new handlers run `clearScreening`, so a `RESET` from idle wipes the stale error before the fresh greeting is appended. Caught by /autoplan eng review as a critical bug; regression test added in `src/lib/fsm/machine.test.ts`.
+- **SSE error path clears stale partial state.** When a `RESET` from one tab won the optimistic-CAS race against an in-flight `evaluating` in another tab, the SSE route would emit an `error` event after having already streamed `partial` chunks. The client's error handler only set `error`, leaving the half-rendered `<StreamingVerdict>` next to a red error banner. The handler now also `setPartial(null)`, clears optimistic user messages, and calls `router.refresh()` so the chat reconciles to actual server state. Files: `src/components/chat-stream.tsx`.
+
 ## [0.3.2.3] - 2026-04-30
 
 ### Fixed

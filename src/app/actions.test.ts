@@ -28,6 +28,26 @@ const extractor = {
 };
 vi.mock("@/lib/ai/extract-pdf", () => extractor);
 
+const repos = {
+  ConcurrentModificationError: class extends Error {
+    readonly conversationId: string;
+    readonly expectedVersion: number;
+    constructor(conversationId: string, expectedVersion: number) {
+      super(
+        `Conversation ${conversationId} was modified concurrently (expected version ${expectedVersion})`,
+      );
+      this.name = "ConcurrentModificationError";
+      this.conversationId = conversationId;
+      this.expectedVersion = expectedVersion;
+    }
+  },
+  getOrCreateShareLink: vi.fn(),
+  getScreeningById: vi.fn(),
+  saveAppSettings: vi.fn(),
+  deleteMessagesForConversation: vi.fn(),
+};
+vi.mock("@/lib/db/repositories", () => repos);
+
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
 }));
@@ -37,11 +57,22 @@ vi.mock("next/navigation", () => ({
 }));
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  // resetAllMocks clears call history AND mock implementations / queued
+  // mockRejectedValueOnce values. Earlier tests in this file enqueue
+  // multiple rejections via mockRejectedValueOnce; if we only used
+  // clearAllMocks() those queued values would leak into later tests and
+  // make sendTextMessage etc see synthetic CMEs they never set up.
+  vi.resetAllMocks();
   cookies.getConversationCookie.mockResolvedValue("convo-1");
   orchestrator.loadConversation.mockResolvedValue({
     state: "idle",
     context: { conversationId: "convo-1" },
+  });
+  orchestrator.startConversation.mockResolvedValue({
+    conversationId: "convo-1",
+    state: "idle",
+    context: { conversationId: "convo-1" },
+    reply: "ok",
   });
   orchestrator.dispatch.mockResolvedValue({
     conversationId: "convo-1",
@@ -49,15 +80,76 @@ beforeEach(() => {
     context: { conversationId: "convo-1" },
     reply: "ok",
   });
+  repos.deleteMessagesForConversation.mockResolvedValue(undefined);
 });
 
 describe("startNewScreening", () => {
-  it("clears the conversation cookie and redirects to /screening/new", async () => {
+  it("deletes messages BEFORE dispatching RESET, keeps the cookie, and redirects with ?reset=1", async () => {
     const { redirect } = await import("next/navigation");
     const { startNewScreening } = await import("./actions");
+
+    // Capture call order — delete must run before dispatch (otherwise the
+    // bot greeting from dispatch gets wiped).
+    const callOrder: string[] = [];
+    repos.deleteMessagesForConversation.mockImplementation(async () => {
+      callOrder.push("delete");
+    });
+    orchestrator.dispatch.mockImplementation(async () => {
+      callOrder.push("dispatch");
+      return {
+        conversationId: "convo-1",
+        state: "idle",
+        context: { conversationId: "convo-1" },
+        reply: "ok",
+      };
+    });
+
     await startNewScreening();
-    expect(cookies.clearConversationCookie).toHaveBeenCalledOnce();
-    expect(redirect).toHaveBeenCalledWith("/screening/new");
+
+    expect(cookies.clearConversationCookie).not.toHaveBeenCalled();
+    expect(repos.deleteMessagesForConversation).toHaveBeenCalledWith("convo-1");
+    expect(orchestrator.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: "convo-1",
+        event: { type: "RESET" },
+      }),
+    );
+    expect(callOrder).toEqual(["delete", "dispatch"]);
+    expect(redirect).toHaveBeenCalledWith("/screening/new?reset=1");
+  });
+
+  it("retries once on ConcurrentModificationError (RESET is idempotent)", async () => {
+    const { startNewScreening } = await import("./actions");
+    const cme = new repos.ConcurrentModificationError("convo-1", 0);
+    orchestrator.dispatch.mockRejectedValueOnce(cme).mockResolvedValueOnce({
+      conversationId: "convo-1",
+      state: "idle",
+      context: { conversationId: "convo-1" },
+      reply: "ok",
+    });
+
+    await startNewScreening();
+
+    expect(orchestrator.dispatch).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-throws non-CME errors after the first attempt", async () => {
+    const { startNewScreening } = await import("./actions");
+    orchestrator.dispatch.mockRejectedValueOnce(new Error("DB down"));
+
+    await expect(startNewScreening()).rejects.toThrow("DB down");
+    expect(orchestrator.dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-throws if the second CME retry also fails", async () => {
+    const { startNewScreening } = await import("./actions");
+    const cme = new repos.ConcurrentModificationError("convo-1", 0);
+    orchestrator.dispatch.mockRejectedValueOnce(cme).mockRejectedValueOnce(cme);
+
+    await expect(startNewScreening()).rejects.toBeInstanceOf(
+      repos.ConcurrentModificationError,
+    );
+    expect(orchestrator.dispatch).toHaveBeenCalledTimes(2);
   });
 });
 

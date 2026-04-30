@@ -11,14 +11,28 @@ export const dynamic = "force-dynamic";
 
 export default async function NewScreening() {
   const conversationId = await ensureConversation();
-  const [messages, screenings, loaded] = await Promise.all([
+  const [messages, allScreenings, loaded] = await Promise.all([
     listMessages(conversationId),
     listScreenings(conversationId),
     loadConversation(conversationId),
   ]);
   const stateValue = loaded?.state ?? "idle";
   const stateContext = loaded?.context;
-  const resultByMessageId = pairScreeningsToMessages(messages, screenings);
+  // After "+ New screening" wipes the transcript, prior screenings still
+  // exist on the conversation but predate every message in the new session.
+  // Without this filter pairScreeningsToMessages would stamp the OLD verdict
+  // card onto the freshly-appended bot greeting because it walks scrIdx
+  // forward from the start. Scope to verdicts produced at-or-after the first
+  // message in the current transcript so historical cards stay in the
+  // sidebar (where they belong) and out of the active chat.
+  const sessionStart = messages[0]?.createdAt;
+  const sessionScreenings = sessionStart
+    ? allScreenings.filter((s) => s.createdAt >= sessionStart)
+    : allScreenings;
+  const resultByMessageId = pairScreeningsToMessages(
+    messages,
+    sessionScreenings,
+  );
 
   // Plain object for the client component (Map isn't serializable across the
   // server/client boundary in a clean way for our purposes).

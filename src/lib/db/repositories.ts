@@ -135,6 +135,24 @@ export async function listMessages(conversationId: string): Promise<Message[]> {
     .orderBy(asc(messages.createdAt));
 }
 
+/**
+ * Delete every transcript row for one conversation. Used by the
+ * "+ New screening" server action so a click clears the chat without
+ * destroying the parent `conversations` row — that keeps the cookie identity
+ * intact so the sidebar's `listRecentScreenings(conversationId, …)` continues
+ * to surface previously-recorded screenings.
+ *
+ * The FK on `screenings.conversation_id` only cascades on a `conversations`
+ * delete, not on per-`messages` deletes — verified by the integration test in
+ * `test/integration/messages.delete.test.ts`. So screenings survive.
+ */
+export async function deleteMessagesForConversation(
+  conversationId: string,
+): Promise<void> {
+  const db = getDb();
+  await db.delete(messages).where(eq(messages.conversationId, conversationId));
+}
+
 export async function recordScreening(
   screening: Omit<NewScreening, "id" | "createdAt">,
 ): Promise<string> {

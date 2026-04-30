@@ -84,6 +84,16 @@ codepath that CI runs for E2E.
   `screen()` call for a deterministic stub. CI runs Playwright against this. Real
   model behavior is covered by the schema-validated unit tests on the screening
   service boundary.
+- **Persistent sidebar history across "+ New screening".** The button used to clear
+  the conversation cookie, which made the proxy mint a fresh `conversations` row and
+  hide every prior verdict from the sidebar query. Fix: keep the cookie, delete the
+  current chat transcript, dispatch FSM `RESET`. The parent conversation row and its
+  `screenings` rows survive, so the sidebar shows every verdict produced from this
+  browser. A `<NewScreeningButton/>` client wrapper reads `body.dataset.streaming`
+  (published by `<ChatStream>`) and pops a `window.confirm()` if you click mid-evaluation,
+  then `useFormStatus().pending` collapses fast double-clicks to one round-trip. A
+  one-shot `<HistoryToast/>` (gated by `localStorage`) explains the new behavior on
+  first reset, then strips `?reset=1` via `router.replace`.
 - **Runtime AI knobs without redeploying.** A topbar gear opens a settings modal —
   pick from a server-side allowlist of OpenRouter models, tune the FSM evaluation
   timeout, max retries, and temperature. The model dropdown live-fetches OpenRouter's
@@ -179,9 +189,11 @@ src/
 ├── components/                     # UI
 │   ├── shell/                      # Workspace chrome
 │   │   ├── sidebar.tsx             # Brand + recents + workspace footer
+│   │   ├── new-screening-button.tsx # Client wrapper: mid-eval confirm + pending guard
 │   │   └── topbar.tsx              # Breadcrumbs + ⌘K input + theme toggle
 │   ├── ui/                         # Primitives (Pill, IconButton, ScoreDisplay)
-│   ├── chat-stream.tsx             # client: SSE consumer, optimistic render
+│   ├── chat-stream.tsx             # client: SSE consumer, optimistic render, publishes body.dataset.streaming
+│   ├── history-toast.tsx           # One-shot toast on `?reset=1` after + New screening
 │   ├── streaming-verdict.tsx       # Progressive verdict reveal during stream
 │   ├── verdict-header.tsx          # Detail-page header — score + meta
 │   ├── requirement-list.tsx        # Must-haves + nice-to-haves

@@ -2,6 +2,47 @@
 
 Per skill / component, P0-P4. Completed items move to the bottom.
 
+## Deferred from /autoplan on `mihaimdm22/screening-history` (2026-04-30)
+
+The screening-history fix shipped Option B (delete messages + FSM RESET, keep
+cookie). These items were flagged by /autoplan reviewers and explicitly
+deferred to honor the user's literal one-sentence ask.
+
+### Product / UX (P2)
+
+- **Job-grouped sidebar history** — both reviewers (Codex + Claude subagent)
+  flagged this as the durable product shape. Real ATS tools (Greenhouse,
+  Ashby, Gem) surface candidates per job, not flat per-cookie lists.
+  Requires: a `jobs` concept (or JD-text-hash dedup heuristic), schema
+  change, sidebar UX redesign, dashboard redesign. Estimated ~10-15 files.
+  Triggers when: this app moves beyond interview-challenge demo.
+- **Sidebar date dividers** ("Today / Yesterday / Last 7 days") — relevant
+  past ~10-20 entries; demo doesn't reach that yet.
+- **Mobile history entry point** — sidebar is hidden below 1024px per
+  DESIGN.md. The first-run toast covers mobile users for the discoverability
+  cue, but a dedicated mobile history surface (hamburger-overlay or topbar
+  History button) would close the gap. Out of scope for the bug fix.
+- **"New screening" placeholder row** in the sidebar above the Recent list
+  — gives `/screening/new` a visible active state. Defer; the post-reset
+  toast already provides the cue.
+
+### Identity / auth (P3)
+
+- **Long-cookie implications for shared computers** — the new flow keeps
+  the conversation cookie indefinitely. Previously, "+ New screening" acted
+  as a quasi-logout. Document in CHANGELOG; revisit when login / "Clear
+  history" UI lands.
+- **Workspace concept (proper)** — both reviewers explicitly rejected
+  `workspace_id` as a wrong abstraction _before login exists_. When
+  multi-tenancy / login does ship, design the workspace abstraction
+  intentionally — don't bolt it onto the cookie.
+
+### Performance (P4)
+
+- **Bounded message-delete** — `deleteMessagesForConversation` does an
+  unbounded indexed scan. At demo scale (<50 messages per conversation)
+  this is fine; if a real corpus emerges, add `LIMIT` + iterative delete.
+
 ## Completed
 
 ### E2E: screening upload race condition

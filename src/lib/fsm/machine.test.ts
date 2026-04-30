@@ -263,6 +263,44 @@ describe("botMachine", () => {
     expect(snap.context.result).toBeUndefined();
   });
 
+  it("RESET from idle clears stale error from a previous failed evaluation", async () => {
+    // Drive into idle via a screening failure so context.error is populated,
+    // then verify RESET clears it. Without the idle.RESET handler, the stale
+    // error survives and renderReply emits a "Sorry, the screening failed: …"
+    // prefix on the next bot reply — see /autoplan eng review issue #1.
+    const actor = makeActor({
+      screenImpl: async () => {
+        throw new Error("OpenRouter 503");
+      },
+    });
+    actor.start();
+    actor.send({ type: "PROVIDE_JD", text: "JD" });
+    actor.send({ type: "PROVIDE_CV", text: "CV" });
+    const failed = await waitFor(actor, (s) => s.value === "idle", {
+      timeout: 1000,
+    });
+    expect(failed.context.error).toBe("OpenRouter 503");
+
+    actor.send({ type: "RESET" });
+    const snap = actor.getSnapshot();
+    expect(snap.value).toBe("idle");
+    expect(snap.context.error).toBeUndefined();
+    expect(snap.context.jobDescription).toBeUndefined();
+    expect(snap.context.cv).toBeUndefined();
+    expect(snap.context.result).toBeUndefined();
+  });
+
+  it("CANCEL from idle is a clean no-op and clears any stale context", () => {
+    // Symmetric to RESET — CANCEL should also be safe from idle so callers
+    // (the "+ New screening" path, the cancel button) don't need to branch.
+    const actor = makeActor();
+    actor.start();
+    expect(actor.getSnapshot().value).toBe("idle");
+    actor.send({ type: "CANCEL" });
+    expect(actor.getSnapshot().value).toBe("idle");
+    expect(actor.getSnapshot().context.jobDescription).toBeUndefined();
+  });
+
   describe("evaluating timeout (FSM-owned via xstate `after`)", () => {
     afterEach(() => {
       vi.useRealTimers();
