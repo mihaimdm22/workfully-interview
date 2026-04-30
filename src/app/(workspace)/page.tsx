@@ -125,7 +125,7 @@ function NewScreeningButton() {
   return (
     <Link
       href="/screening/new"
-      className="bg-primary text-primary-fg inline-flex h-8 items-center gap-2 rounded-md px-3 text-[14px] font-medium transition-opacity hover:opacity-90"
+      className="bg-primary text-primary-fg inline-flex h-8 items-center gap-2 rounded-md px-3 text-[14px] font-medium whitespace-nowrap transition-opacity hover:opacity-90"
     >
       + New screening
     </Link>

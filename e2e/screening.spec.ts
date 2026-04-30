@@ -143,6 +143,12 @@ test.describe("Screening flow", () => {
     await page
       .getByLabel("Upload PDF")
       .setInputFiles(fixture("job-description.pdf"));
+    // Wait for the FSM to advance before the second upload — back-to-back
+    // setInputFiles races with the orchestrator's optimistic-CAS retry loop
+    // because the second upload's snapshot version reads stale.
+    await expect(page.getByLabel(/Current state/)).toContainText(
+      /awaiting CV/i,
+    );
     await page
       .getByLabel("Upload PDF")
       .setInputFiles(fixture("cv-strong-match.pdf"));
@@ -167,6 +173,11 @@ test.describe("Screening flow", () => {
     await page
       .getByLabel("Upload PDF")
       .setInputFiles(fixture("job-description.pdf"));
+    // See note in the test above — wait for `awaiting CV` so the second
+    // upload doesn't race the orchestrator's optimistic-CAS loop.
+    await expect(page.getByLabel(/Current state/)).toContainText(
+      /awaiting CV/i,
+    );
     await page
       .getByLabel("Upload PDF")
       .setInputFiles(fixture("cv-strong-match.pdf"));

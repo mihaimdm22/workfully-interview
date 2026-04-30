@@ -2,6 +2,21 @@
 
 All notable changes to the Workfully Screening Bot will be documented in this file.
 
+## [0.3.1.0] - 2026-04-30
+
+### Added
+
+- **`/walkthrough` portfolio page** — a single-scroll, standalone architecture walkthrough that interviewers can browse during or after a demo call. Lives outside the `(workspace)` shell with a bare layout (mirrors `/s/[slug]`) so it reads as a portfolio piece rather than in-product help. Eleven sections: hero with "Try it now" CTA + author card linking to `basetool.ai/en/about/david`, build-time stats banner, what-I-built overview, static SVG state machine diagram, schema-as-contract section, AI integration, testing strategy, tooling, AI in workflow, inline verdict gallery (reusing `<VerdictHeader>`/`<RequirementList>`/`<Recommendation>` against 3 typed `ScreeningResult` fixtures, zero DB dep), and an author footer. `noindex` metadata, mobile-responsive, dark/light mode parity, sticky scroll-spy TOC on desktop / collapsing `<details>` below 1024px, deep-link initial highlight via `useState` lazy initializer.
+- **Build-time stats reader** at `src/lib/walkthrough/stats.ts` — five readers (`countTests`, `countAdrs`, `countLines`, `countDeps`, `readCoverage`, plus `readVersion`) that walk the filesystem at static-build time and render real numbers in the stats banner. Each returns `number | null` so any failure renders `—` instead of crashing. Coverage % comes from a committed `.coverage-snapshot.json` refreshable via `pnpm walkthrough:stats` after a `pnpm test:coverage` run. Parameterized vitest covers all 5 readers × happy + fallback (12 cases).
+- **"About this project" topbar link** — permanent pill in the workspace topbar (visible from `md:` breakpoint) that discovers `/walkthrough` from anywhere in the app. One-file change to `src/components/shell/topbar.tsx`.
+- **Shiki for code highlighting** — server-rendered build-time highlighting (zero runtime cost) themed against design tokens (`--muted` background, GitHub Light/Dark themes swapped via `[data-theme="dark"]`). Code-block component wraps `codeToHtml` in try/catch with a plain `<pre>` fallback so a future bad lang doesn't break the static build.
+- **Playwright smoke E2E** at `e2e/walkthrough.spec.ts` — navigates from `/` via the topbar About link, asserts the page loads with hero h1, basetool.ai author link, three verdict cards, and the hero "Try it now" CTA pointing at `/screening/new`.
+- **New design token** `--text-page-hero` (48px, leading 1.0) extending DESIGN.md for the walkthrough hero. Used responsively (34/42/48px across breakpoints) so the hero wraps cleanly on phones.
+
+### Changed
+
+- **Dashboard "+ New screening" button** now uses `whitespace-nowrap` so the topbar's three-column trailing slot (with the new About link + settings + theme toggle) doesn't wrap the button text on tighter widths.
+
 ## [0.3.0.0] - 2026-04-30
 
 ### Added

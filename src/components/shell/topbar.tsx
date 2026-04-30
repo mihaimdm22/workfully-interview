@@ -36,12 +36,26 @@ export async function Topbar({
       {showSearch ? <CommandKInput /> : null}
       <div className="flex items-center justify-end gap-2">
         {trailing}
+        <AboutLink />
         {initialSettings ? (
           <SettingsLauncher initialSettings={initialSettings} />
         ) : null}
         <ThemeToggle />
       </div>
     </header>
+  );
+}
+
+function AboutLink() {
+  return (
+    <Link
+      href="/walkthrough"
+      className="text-fg-muted hover:text-fg hover:bg-muted hidden h-8 items-center gap-1.5 rounded-md px-2.5 text-[13px] whitespace-nowrap transition-colors md:inline-flex"
+      aria-label="Read the architecture walkthrough"
+    >
+      <span aria-hidden className="bg-accent size-1.5 rounded-[2px]" />
+      About this project
+    </Link>
   );
 }
 

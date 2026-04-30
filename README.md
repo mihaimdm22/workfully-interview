@@ -20,6 +20,8 @@ dashboard at `/`, permanent URLs per verdict, ⌘K search.
 Verdicts get a permanent page at `/screening/[id]`, an unguessable public share at
 `/s/[slug]`, an Open Graph card image, and a server-rendered Chromium PDF.
 
+A standalone architecture walkthrough lives at [`/walkthrough`](./src/app/walkthrough/) — single-scroll, build-time stats, inline verdict gallery using the same share components, sticky scroll-spy TOC. Reachable from the topbar's "About this project" link.
+
 The original challenge brief lives in [`docs/CHALLENGE.md`](./docs/CHALLENGE.md). The
 visual contract lives in [`DESIGN.md`](./DESIGN.md).
 

@@ -1,0 +1,5 @@
+{
+  "_comment": "Run `pnpm walkthrough:stats` to refresh after a coverage run. Manually edit only when CI cannot regenerate.",
+  "statementsPct": 95,
+  "updatedAt": "2026-04-30"
+}

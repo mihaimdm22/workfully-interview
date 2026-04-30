@@ -47,6 +47,7 @@
   --text-2xl: 22px;
   --text-display: 28px;
   --text-hero: 36px;
+  --text-page-hero: 48px;
 
   /* Spacing — 4px base */
   --s-1: 4px;
@@ -250,6 +251,37 @@ body {
   background: linear-gradient(90deg, transparent, var(--accent), transparent);
   background-size: 200% 100%;
   animation: shimmer 1.4s linear infinite;
+}
+
+/**
+ * Shiki code blocks on /walkthrough. Override Shiki's default white background
+ * to match `--muted` (the inline-code surface from DESIGN.md). Theme-swap is
+ * handled by Shiki's `defaultColor: false` mode + these CSS rules.
+ */
+.walkthrough-shiki pre {
+  background: var(--muted) !important;
+  color: var(--fg);
+  padding: 16px;
+  font-size: 13px;
+  line-height: 1.55;
+  font-family: var(--font-mono);
+  margin: 0;
+}
+.walkthrough-shiki code {
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+  font-size: inherit;
+}
+[data-theme="dark"] .walkthrough-shiki pre {
+  background: var(--muted) !important;
+}
+/* Light theme reads .light spans, dark theme reads .dark spans. */
+.walkthrough-shiki .shiki span {
+  color: var(--shiki-light, currentColor);
+}
+[data-theme="dark"] .walkthrough-shiki .shiki span {
+  color: var(--shiki-dark, currentColor);
 }
 
 /**
