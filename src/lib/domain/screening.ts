@@ -20,10 +20,19 @@ const requirementMatchSchema = z.object({
 });
 
 // Constraints (range, length, item counts) live in `.describe()` text and the
-// system prompt rather than as JSON-Schema keywords. OpenAI/Azure structured
-// outputs in strict mode reject `minimum`/`maximum`, `minLength`/`maxLength`,
-// and `minItems`/`maxItems`, so keeping them here would break OpenRouter's
-// promise of provider portability (ADR 0004). Shape + types are still enforced.
+// system prompt rather than as JSON-Schema keywords. Anthropic and OpenAI/Azure
+// structured outputs in strict mode reject `minimum`/`maximum`, `minLength`/
+// `maxLength`, and `minItems`/`maxItems`, so keeping them here would break
+// OpenRouter's promise of provider portability (ADR 0004). Shape + types are
+// still enforced.
+//
+// Note: `score` is `z.number()`, not `z.number().int()`. Zod 4's
+// `z.toJSONSchema()` silently injects `minimum: -2^53+1` and `maximum: 2^53-1`
+// for integer types as safe-int bounds — Anthropic's structured output rejects
+// the request with "For 'integer' type, properties maximum, minimum are not
+// supported" the moment those land in the schema. Integer-ness is enforced via
+// the prompt rubric and a defensive `Math.round()` in `screen.ts` after the
+// AI call returns.
 export const screeningResultSchema = z.object({
   candidateName: z
     .string()
@@ -40,9 +49,8 @@ export const screeningResultSchema = z.object({
   ),
   score: z
     .number()
-    .int()
     .describe(
-      "Confidence score, integer from 0 (no fit) to 100 (perfect fit).",
+      "Confidence score, whole number from 0 (no fit) to 100 (perfect fit). Output an integer with no decimals.",
     ),
   summary: z
     .string()

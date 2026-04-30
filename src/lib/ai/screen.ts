@@ -151,7 +151,7 @@ export async function screen(
   const latencyMs = Date.now() - startedAt;
 
   return {
-    result: object,
+    result: postprocess(object),
     model: modelId,
     latencyMs,
   };
@@ -179,6 +179,17 @@ export async function screenStreaming(
   const maxRetries = deps.maxRetries ?? DEFAULT_MAX_RETRIES;
   const temperature = deps.temperature ?? DEFAULT_TEMPERATURE;
 
+  // streamObject's default `onError` is `console.error(error)` — provider
+  // errors (e.g. OpenRouter returning 400 because the upstream model rejected
+  // the schema) are silently swallowed: `partialObjectStream` skips error
+  // chunks and ends, and `object.promise` is never resolved or rejected, so
+  // `await object` hangs forever. The orchestrator's only safety net is the
+  // FSM's 120s `after` timer, which surfaces to the user as a misleading
+  // "AI took longer than 120 seconds" message. Capture the error here and
+  // throw it after the partial loop so the FSM `screen` actor sees a real
+  // rejection and routes through `onError` → idle with the actual reason.
+  let streamError: unknown;
+
   const startedAt = Date.now();
   const { partialObjectStream, object } = streamObject({
     model,
@@ -190,10 +201,19 @@ export async function screenStreaming(
     temperature,
     maxRetries,
     abortSignal: deps.signal,
+    onError: ({ error }) => {
+      streamError = error;
+    },
   });
 
   for await (const partial of partialObjectStream) {
     deps.onPartial?.(partial as Partial<ScreeningResult>);
+  }
+
+  if (streamError !== undefined) {
+    throw streamError instanceof Error
+      ? streamError
+      : new Error(String(streamError));
   }
 
   // `object` resolves with the final, schema-validated result OR throws if
@@ -203,10 +223,20 @@ export async function screenStreaming(
   const latencyMs = Date.now() - startedAt;
 
   return {
-    result: finalObject,
+    result: postprocess(finalObject),
     model: modelId,
     latencyMs,
   };
+}
+
+/**
+ * Defensive normalization for the AI-produced result. The schema doesn't carry
+ * a JSON-Schema `integer` keyword for `score` (see `screening.ts`), so we
+ * round on the way out in case the model returns a fractional number — keeps
+ * the UI from rendering "87.5" and downstream consumers from seeing decimals.
+ */
+function postprocess(result: ScreeningResult): ScreeningResult {
+  return { ...result, score: Math.round(result.score) };
 }
 
 /**

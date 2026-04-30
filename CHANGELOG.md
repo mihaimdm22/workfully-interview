@@ -2,6 +2,15 @@
 
 All notable changes to the Workfully Screening Bot will be documented in this file.
 
+## [0.3.2.3] - 2026-04-30
+
+### Fixed
+
+- **Screening was failing with "AI took longer than 120 seconds" because Anthropic via OpenRouter rejects our schema, and `streamObject` was hiding the rejection.** The new `ai.call.*` logs from v0.3.2.2 surfaced the actual error within 12 minutes of deploy: `AI_APICallError [Anthropic] output_config.format.schema: For 'integer' type, properties maximum, minimum are not supported`, status 400, returned in ~6s. Two real bugs combined into one user-facing symptom — the "120 seconds" was just the FSM's `after` timer expiring on a hung promise.
+  - **Schema fix in `src/lib/domain/screening.ts`** — dropped `.int()` from the `score` field. Zod 4's `z.toJSONSchema()` silently injects `minimum: -2^53+1` and `maximum: 2^53-1` for any integer type as safe-int bounds, and Anthropic's structured output rejects those keywords on `integer`. v0.1.2.0 (commit `b1bba12`) already removed the explicit `.min()/.max()` from this schema for OpenAI/Azure strict-mode portability, but didn't notice that `.int()` re-injects them under Zod 4. `score` is now `z.number()` with the integer constraint expressed in `.describe()` text and the `SYSTEM_PROMPT` rubric. Defensive `Math.round()` in a new `postprocess()` helper catches the edge case where the model returns a fractional number, so the UI still gets `87` not `87.5`.
+  - **Error-propagation fix in `src/lib/ai/screen.ts`** — pass an `onError` callback to `streamObject` and rethrow after the partial loop. The AI SDK's default `onError` is `console.error(error)` — provider/network errors during streaming get logged to stderr, the `partialObjectStream` skips error chunks (`case "error": break`), and `_object.promise` is never resolved or rejected. The for-await loop ended silently, `await object` hung forever, and the FSM's 120s `after` timer was the only thing that eventually unstuck the request. With the capture in place, screenStreaming rejects with the real provider error so the FSM `screen` actor's `onError` fires immediately and the user sees the actual cause instead of a misleading timeout.
+  - Two new regression tests: `src/lib/domain/screening.test.ts` asserts the JSON schema doesn't carry any of the strict-mode-incompatible keywords (`minimum`/`maximum`/`exclusiveMinimum`/`exclusiveMaximum`/`minLength`/`maxLength`/`minItems`/`maxItems`) and that `score.type` is `"number"` not `"integer"`. New "rejects when the provider streams an error part instead of partials" case in `src/lib/ai/screen.test.ts` simulates the exact reproducer (`{ type: "error", error: ... }` chunk from `doStream`) and asserts `screenStreaming` rejects rather than hanging. Plus a `screen` test that asserts `Math.round()` runs on the fractional path. Test suite now 164/164 (was 160).
+
 ## [0.3.2.2] - 2026-04-30
 
 ### Fixed
