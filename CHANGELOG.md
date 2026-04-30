@@ -2,6 +2,12 @@
 
 All notable changes to the Workfully Screening Bot will be documented in this file.
 
+## [0.3.2.1] - 2026-04-30
+
+### Fixed
+
+- **Screening SSE function killed before AI returned.** The deployed demo at `workfully-interview.vercel.app` was still surfacing "AI took longer than 120 seconds. Try again." after the v0.3.1.1 FSM timeout bump. Reproduced against prod with curl: the SSE stream emitted `user-message` at t=1s, then the connection died at t=62s with `curl: (18) Transferred a partial file` — Vercel was killing the function at the project's default 60s `maxDuration` long before the FSM's 120s `after` timer could fire. Subsequent warm-path retries that survived past 120s then surfaced the FSM error as the user-visible message. Fixed by declaring `export const maxDuration = 300` on `src/app/api/screening/stream/route.ts`, matching the 300s Vercel function ceiling already referenced in `src/lib/domain/settings.ts` and giving 120s of headroom beyond the 180s FSM slider max. The PDF download route already followed this pattern; the streaming AI route just hadn't been opted in.
+
 ## [0.3.2.0] - 2026-04-30
 
 ### Fixed

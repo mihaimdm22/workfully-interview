@@ -14,10 +14,13 @@ import { z } from "zod";
 
 export const SETTINGS_SINGLETON_ID = "singleton";
 
-/** Hard cap on the FSM evaluation timeout. The Vercel function `maxDuration`
- *  default is 300s; a user-controlled timeout above ~180s risks the function
- *  being killed before the FSM's own `after` transition fires, which would
- *  leak as a 504 instead of a clean error. 180s gives a safe margin. */
+/** Hard cap on the FSM evaluation timeout. The streaming SSE route explicitly
+ *  declares `export const maxDuration = 300` (see
+ *  `src/app/api/screening/stream/route.ts`) — without it the Vercel function
+ *  inherits the project default (observed at 60s on this deploy), which kills
+ *  the SSE connection before the FSM's `after` transition can fire and leaks
+ *  as a 504 instead of a clean error. 180s leaves 120s of headroom under the
+ *  declared 300s function ceiling. */
 export const TIMEOUT_MS_MIN = 30_000;
 export const TIMEOUT_MS_MAX = 180_000;
 
