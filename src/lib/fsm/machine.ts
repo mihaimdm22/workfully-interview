@@ -31,7 +31,7 @@ import type { ScreeningResult } from "@/lib/domain/screening";
  * See ADR 0006.
  */
 
-export const EVAL_TIMEOUT_MS = 60_000;
+export const EVAL_TIMEOUT_MS = 120_000;
 
 const TIMEOUT_ERROR_MESSAGE = (ms: number) =>
   `AI took longer than ${Math.round(ms / 1000)} seconds. Try again.`;
@@ -63,7 +63,7 @@ export type BotEvent =
 
 interface BotInput {
   conversationId: string;
-  /** Optional override; defaults to `EVAL_TIMEOUT_MS` (60s) when unset. */
+  /** Optional override; defaults to `EVAL_TIMEOUT_MS` (120s) when unset. */
   evalTimeoutMs?: number;
 }
 

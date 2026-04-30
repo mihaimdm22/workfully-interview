@@ -118,10 +118,14 @@ export const appSettingsSchema = z.object({
 export type AppSettingsValue = z.infer<typeof appSettingsSchema>;
 
 /** Hardcoded default — used when both env vars and DB are silent. Values
- *  match the migration seed so a fresh DB and a missing-row fallback agree. */
+ *  match the migration seed so a fresh DB and a missing-row fallback agree.
+ *  Timeout is 120s rather than 60s because Vercel cold starts + OpenRouter
+ *  routing + structured-object streaming were producing genuine evaluations
+ *  that landed at 60–90s and tripped the timeout. 120s is still well under
+ *  the 180s slider max and the 300s Vercel function ceiling. */
 export const DEFAULT_SETTINGS: AppSettingsValue = {
   model: "anthropic/claude-haiku-4.5",
-  timeoutMs: 60_000,
+  timeoutMs: 120_000,
   maxRetries: 0,
   temperature: 0.2,
 };

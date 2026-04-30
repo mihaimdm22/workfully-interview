@@ -285,7 +285,7 @@ describe("botMachine", () => {
 
       const snap = actor.getSnapshot();
       expect(snap.value).toBe("idle");
-      expect(snap.context.error).toMatch(/longer than 60 seconds/i);
+      expect(snap.context.error).toMatch(/longer than 120 seconds/i);
       expect(snap.context.jobDescription).toBeUndefined();
       expect(snap.context.cv).toBeUndefined();
     });
