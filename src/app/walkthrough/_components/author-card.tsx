@@ -93,10 +93,10 @@ export async function AuthorFooter({ id }: { id: string }) {
             </li>
             <li>
               <a
-                href="mailto:partnerships@pump.vc"
+                href="mailto:david@basetool.ai"
                 className="text-fg-muted hover:text-fg transition-colors"
               >
-                <span className="font-mono">partnerships@pump.vc</span>
+                <span className="font-mono">david@basetool.ai</span>
               </a>
             </li>
           </ul>
