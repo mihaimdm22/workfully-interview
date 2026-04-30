@@ -165,6 +165,84 @@ test.describe("Screening flow", () => {
     await expect(page.getByText(/Strong match/i).first()).toBeVisible();
   });
 
+  test("sidebar history persists across '+ New screening'", async ({
+    page,
+  }) => {
+    // Produce a verdict, then click "+ New screening" and assert the prior
+    // candidate is still visible in the sidebar — the regression this PR
+    // fixes (clearing the cookie used to orphan all old screenings).
+    await page.goto(NEW_SCREENING);
+    await page
+      .getByLabel("Upload PDF")
+      .setInputFiles(fixture("job-description.pdf"));
+    await expect(page.getByLabel(/Current state/)).toContainText(
+      /awaiting CV/i,
+    );
+    await page
+      .getByLabel("Upload PDF")
+      .setInputFiles(fixture("cv-strong-match.pdf"));
+    await page.waitForURL(/\/screening\/[A-Za-z0-9_-]{20,}/, {
+      timeout: 30_000,
+    });
+
+    // Sidebar shows the verdict on the detail page.
+    const sidebar = page.locator("aside[aria-label='Workspace navigation']");
+    await expect(sidebar.getByText(/Test Candidate/i)).toBeVisible();
+
+    // Click "+ New screening" — the new flow should land on /screening/new
+    // (with a ?reset=1 marker that the toast reads, then strips), with the
+    // chat empty but the sidebar history intact.
+    await sidebar.getByRole("button", { name: /\+ New screening/ }).click();
+    await page.waitForURL(/\/screening\/new(\?.*)?$/, { timeout: 10_000 });
+
+    // Sidebar still shows the prior verdict — this is the whole point.
+    await expect(sidebar.getByText(/Test Candidate/i)).toBeVisible();
+
+    // Chat is fresh — only the bot greeting, no carried-over user messages.
+    await expect(page.getByLabel("Chat transcript")).toContainText(
+      "I'm here to help",
+    );
+    await expect(page.getByLabel("Chat transcript")).not.toContainText(
+      /Strong match/i,
+    );
+  });
+
+  test("'+ New screening' double-click does not error", async ({ page }) => {
+    // After the action shipped the delete-then-dispatch + retry path, two
+    // rapid clicks would race the optimistic CAS write. The action retries
+    // once on ConcurrentModificationError, so the user-visible result of a
+    // double-click should be identical to a single click.
+    await page.goto(NEW_SCREENING);
+    await page
+      .getByLabel("Upload PDF")
+      .setInputFiles(fixture("job-description.pdf"));
+    await expect(page.getByLabel(/Current state/)).toContainText(
+      /awaiting CV/i,
+    );
+    await page
+      .getByLabel("Upload PDF")
+      .setInputFiles(fixture("cv-strong-match.pdf"));
+    await page.waitForURL(/\/screening\/[A-Za-z0-9_-]{20,}/, {
+      timeout: 30_000,
+    });
+
+    const sidebar = page.locator("aside[aria-label='Workspace navigation']");
+    const newButton = sidebar.getByRole("button", { name: /\+ New screening/ });
+
+    // Fire two clicks back-to-back. useFormStatus() disables the button as
+    // soon as the first submit starts, so the second click usually no-ops at
+    // the DOM level — but if it slips through, the action's CME retry
+    // handles the race at the server.
+    await Promise.all([newButton.click(), newButton.click().catch(() => {})]);
+    await page.waitForURL(/\/screening\/new(\?.*)?$/, { timeout: 10_000 });
+
+    // No error toast / banner visible.
+    await expect(page.getByRole("alert")).toHaveCount(0);
+
+    // Sidebar history still has the original screening.
+    await expect(sidebar.getByText(/Test Candidate/i)).toBeVisible();
+  });
+
   test("public share link renders without sidebar or chat log", async ({
     page,
   }) => {
