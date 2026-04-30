@@ -12,6 +12,7 @@ import { extractPdfText } from "@/lib/ai/extract-pdf";
 import { clearConversationCookie, getConversationCookie } from "@/lib/cookies";
 import {
   ConcurrentModificationError,
+  deleteMessagesForConversation,
   getOrCreateShareLink,
   getScreeningById,
   saveAppSettings,
@@ -79,15 +80,46 @@ export async function resetConversation(): Promise<void> {
 }
 
 /**
- * "+ New screening" button entrypoint. Without this, clicking the button
- * just navigates to `/screening/new`, which rehydrates the existing
- * conversation cookie and shows the same chat. Dropping the cookie here
- * lets the proxy mint a fresh id before the redirect-target renders, so
- * `ensureConversation` lands on a brand-new conversation row.
+ * "+ New screening" button entrypoint.
+ *
+ * Was: cleared the conversation cookie so the proxy minted a fresh
+ * `conversations` row. That left previously-recorded screenings orphaned
+ * (their conversation_id no longer matched the cookie), which made the
+ * sidebar look empty after every click.
+ *
+ * Now: keep the cookie, delete this conversation's transcript, and dispatch
+ * an FSM RESET. Both the conversation row and its `screenings` rows survive,
+ * so `listRecentScreenings(conversationId, …)` keeps returning history.
+ *
+ * Ordering matters: delete-FIRST, dispatch-SECOND. `dispatch` appends a fresh
+ * idle bot greeting after its CAS commit; running delete after that would
+ * wipe the new greeting and leave an empty transcript. Eng-review issue #2.
+ *
+ * Concurrency: a double-click fires two parallel actions. Both load the same
+ * `expectedVersion`, one of the two CAS writes throws CME. RESET is
+ * idempotent, so we retry once on CME and re-throw anything else.
  */
 export async function startNewScreening(): Promise<void> {
-  await clearConversationCookie();
-  redirect("/screening/new");
+  const conversationId = await ensureConversation();
+  await deleteMessagesForConversation(conversationId);
+  try {
+    await dispatch({ conversationId, event: { type: "RESET" } });
+  } catch (err) {
+    if (err instanceof ConcurrentModificationError) {
+      // RESET is idempotent — retry once. The first attempt's CAS lost to
+      // a concurrent writer (most likely a sibling tab finishing an
+      // evaluation, or a double-clicker). Reading + dispatching again will
+      // see the now-current version and succeed.
+      await dispatch({ conversationId, event: { type: "RESET" } });
+    } else {
+      throw err;
+    }
+  }
+  // `?reset=1` is the post-reset signal the discoverability toast on
+  // /screening/new uses to decide whether to show "Previous verdict saved
+  // in the sidebar" — combined with a localStorage flag so the toast only
+  // ever fires on the first reset.
+  redirect("/screening/new?reset=1");
 }
 
 /**
