@@ -19,7 +19,7 @@ import {
   resolveScreenConfig,
   type ResolvedScreenConfig,
 } from "@/lib/ai/resolve-config";
-import { createLogger, stateString } from "@/lib/log";
+import { createLogger, stateString, type Logger } from "@/lib/log";
 import type { ScreeningResult } from "@/lib/domain/screening";
 
 /**
@@ -94,8 +94,14 @@ interface RequestContext {
  * `signal` from XState's `fromPromise` is forwarded to the AI call so that
  * when the FSM exits `evaluating` (e.g., the `after` timeout fires), the
  * in-flight call is actually cancelled — not just abandoned.
+ *
+ * Logger threads through to the actor so we can emit `ai.call.start`,
+ * `ai.call.first-partial`, `ai.call.done`, and `ai.call.error` events as the
+ * AI call progresses. These flush to stdout immediately (Vercel ingests them
+ * even if the function is killed mid-flight), so the next failure shows
+ * actual upstream timing instead of a silent 60s gap.
  */
-function machineForRequest(ctx: RequestContext) {
+function machineForRequest(ctx: RequestContext, log: Logger) {
   return botMachine.provide({
     actors: {
       screen: fromPromise<
@@ -111,14 +117,54 @@ function machineForRequest(ctx: RequestContext) {
           maxRetries: cfg?.maxRetries,
           temperature: cfg?.temperature,
         };
-        const out: ScreenOutput = ctx.onPartial
-          ? await screenStreaming(input, {
-              ...screenDeps,
-              onPartial: ctx.onPartial,
-            })
-          : await screen(input, screenDeps);
-        ctx.meta.lastScreen = { model: out.model, latencyMs: out.latencyMs };
-        return out.result;
+        const modelId = cfg?.model ?? "unknown";
+        const startedAt = Date.now();
+        log.info({ event: "ai.call.start", model: modelId });
+
+        // Wrap onPartial so we can stamp time-to-first-partial — the gap
+        // between actor start and the first OpenRouter chunk is exactly the
+        // window where Vercel's edge would otherwise close the silent SSE
+        // stream. Logged once.
+        let firstPartialMs: number | null = null;
+        const wrappedOnPartial = ctx.onPartial
+          ? (partial: Partial<ScreeningResult>) => {
+              if (firstPartialMs === null) {
+                firstPartialMs = Date.now() - startedAt;
+                log.info({
+                  event: "ai.call.first-partial",
+                  model: modelId,
+                  ms: firstPartialMs,
+                });
+              }
+              ctx.onPartial?.(partial);
+            }
+          : null;
+
+        try {
+          const out: ScreenOutput = wrappedOnPartial
+            ? await screenStreaming(input, {
+                ...screenDeps,
+                onPartial: wrappedOnPartial,
+              })
+            : await screen(input, screenDeps);
+          ctx.meta.lastScreen = { model: out.model, latencyMs: out.latencyMs };
+          log.info({
+            event: "ai.call.done",
+            model: out.model,
+            ms: out.latencyMs,
+            firstPartialMs,
+          });
+          return out.result;
+        } catch (err) {
+          log.error({
+            event: "ai.call.error",
+            model: modelId,
+            ms: Date.now() - startedAt,
+            firstPartialMs,
+            err: err instanceof Error ? err.message : String(err),
+          });
+          throw err;
+        }
       }),
     },
   });
@@ -183,7 +229,7 @@ function withFreshTimeout(
  */
 export async function startConversation(id?: string): Promise<DispatchResult> {
   const ctx = newRequestContext();
-  const machine = machineForRequest(ctx);
+  const machine = machineForRequest(ctx, createLogger(id ?? "pending"));
   const seedId = id ?? "pending";
   const actor = createActor(machine, { input: { conversationId: seedId } });
   actor.start();
@@ -269,7 +315,7 @@ async function dispatchInternal(
   }
 
   const ctx = newRequestContext(onPartial, config);
-  const machine = machineForRequest(ctx);
+  const machine = machineForRequest(ctx, log);
   const actor = createActor(machine, {
     input: { conversationId, evalTimeoutMs: config.timeoutMs },
     // XState's snapshot generic uses inferred internal types; our zod-validated
@@ -384,7 +430,7 @@ export async function loadConversation(conversationId: string): Promise<{
   const persistedInput = migrateLegacySnapshot(convo.fsmSnapshot);
 
   const ctx = newRequestContext();
-  const machine = machineForRequest(ctx);
+  const machine = machineForRequest(ctx, createLogger(conversationId));
   const actor = createActor(machine, {
     input: { conversationId },
     // XState's snapshot generic uses inferred internal types; our zod-validated

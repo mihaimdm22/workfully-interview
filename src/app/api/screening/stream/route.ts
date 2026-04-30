@@ -12,15 +12,14 @@ export const dynamic = "force-dynamic";
 // keeps things on the platform-default Node.js runtime. SSE streaming works
 // natively there.
 //
-// `maxDuration` must exceed the FSM eval budget. The settings UI caps the
-// FSM timeout at 180s (TIMEOUT_MS_MAX); without this declaration the
-// function inherits the project default (60s on the deployed Vercel plan
-// here, observed empirically), which kills the SSE function while the AI is
-// still streaming and surfaces as "AI took longer than 120 seconds" once
-// the FSM's `after` timer eventually fires on a retried request. 300s
-// matches the 300s Vercel function ceiling referenced in
-// `src/lib/domain/settings.ts` and gives 120s of headroom beyond the FSM
-// slider max.
+// `maxDuration` must exceed the FSM eval budget (settings UI caps the FSM
+// timeout at 180s; default 120s). 300s matches the project's
+// `functionDefaultTimeout` and the Vercel ceiling referenced in
+// `src/lib/domain/settings.ts`, leaving ≥120s headroom beyond the slider
+// max. Note: `maxDuration` alone is NOT sufficient — Vercel's edge closes
+// streaming responses that go silent for ~60s regardless of this budget,
+// so the SSE handler below also emits a 15s heartbeat to keep the
+// connection alive while the OpenRouter call is producing nothing.
 export const maxDuration = 300;
 
 const MAX_TEXT_LENGTH = 30_000;
@@ -181,6 +180,21 @@ export async function POST(req: NextRequest): Promise<Response> {
         attachmentBytes: attachment?.bytes,
       });
 
+      // Vercel's edge closes streaming responses that go silent for ~60s,
+      // which is shorter than the FSM's 120s evaluation budget and shorter
+      // than first-byte latency on a slow OpenRouter call. SSE comments are
+      // valid no-ops (EventSource ignores any line starting with `:`), so a
+      // 15s heartbeat keeps the connection alive without polluting the
+      // event protocol the client parses.
+      const keepalive = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(": ping\n\n"));
+        } catch {
+          // Controller was closed (client disconnected, response cancelled).
+          // The interval will be cleared in the finally below; ignore here.
+        }
+      }, 15_000);
+
       try {
         const result = await dispatchStreaming(
           {
@@ -216,6 +230,7 @@ export async function POST(req: NextRequest): Promise<Response> {
           });
         }
       } finally {
+        clearInterval(keepalive);
         controller.close();
       }
     },
