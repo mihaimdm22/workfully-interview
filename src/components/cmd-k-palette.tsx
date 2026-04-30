@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { startNewScreening } from "@/app/actions";
 import { rankMatches } from "@/lib/domain/fuzzy-match";
 import { VerdictDot } from "@/components/ui/pill";
 import type { Verdict } from "@/lib/domain/verdict-style";
@@ -149,13 +149,15 @@ export function CmdKPalette({ items }: CmdKPaletteProps) {
               {items.length === 0 ? (
                 <>
                   No screenings yet.{" "}
-                  <Link
-                    href="/screening/new"
-                    className="text-fg-muted underline"
-                    onClick={closePalette}
+                  <form
+                    action={startNewScreening}
+                    onSubmit={closePalette}
+                    className="inline"
                   >
-                    Start one
-                  </Link>
+                    <button type="submit" className="text-fg-muted underline">
+                      Start one
+                    </button>
+                  </form>
                   .
                 </>
               ) : (

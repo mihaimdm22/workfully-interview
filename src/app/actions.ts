@@ -79,6 +79,18 @@ export async function resetConversation(): Promise<void> {
 }
 
 /**
+ * "+ New screening" button entrypoint. Without this, clicking the button
+ * just navigates to `/screening/new`, which rehydrates the existing
+ * conversation cookie and shows the same chat. Dropping the cookie here
+ * lets the proxy mint a fresh id before the redirect-target renders, so
+ * `ensureConversation` lands on a brand-new conversation row.
+ */
+export async function startNewScreening(): Promise<void> {
+  await clearConversationCookie();
+  redirect("/screening/new");
+}
+
+/**
  * Settings modal — load the OpenRouter model list (with cache + fallback).
  * Called from the client modal on first open. Always resolves; failure modes
  * are encoded in `source` ("fallback") so the UI can show a hint.
