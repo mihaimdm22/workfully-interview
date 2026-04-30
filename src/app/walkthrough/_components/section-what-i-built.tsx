@@ -40,10 +40,11 @@ export function WhatIBuilt({ id }: { id: string }) {
               href="/"
               className="text-accent underline-offset-4 hover:underline"
             >
-              /screening/[id]
-            </Link>
-            , an unguessable public share at <code>/s/[slug]</code>, an OG card,
-            and a server-rendered Chromium PDF.
+              the dashboard
+            </Link>{" "}
+            under <code>/screening/[id]</code>, an unguessable public share at{" "}
+            <code>/s/[slug]</code>, an OG card, and a server-rendered Chromium
+            PDF.
           </span>
         </li>
       </ul>

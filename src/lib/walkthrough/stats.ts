@@ -51,6 +51,13 @@ export async function countDeps(injectedRoot = ROOT): Promise<number | null> {
   });
 }
 
+export async function readVersion(injectedRoot = ROOT): Promise<string | null> {
+  return safe(async () => {
+    const raw = await readFile(join(injectedRoot, "VERSION"), "utf8");
+    return raw.trim() || null;
+  });
+}
+
 export async function readCoverage(
   injectedRoot = ROOT,
 ): Promise<number | null> {

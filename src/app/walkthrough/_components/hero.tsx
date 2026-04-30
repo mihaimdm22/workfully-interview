@@ -1,24 +1,27 @@
 import Link from "next/link";
 import { AuthorCard } from "./author-card";
+import { readVersion } from "@/lib/walkthrough/stats";
 
 const PERSONAL_SITE = "https://basetool.ai/en/about/david";
 
-export function Hero() {
+export async function Hero() {
+  const version = await readVersion();
   return (
     <header className="pt-4 pb-2">
       <div className="text-fg-subtle mb-6 flex items-center gap-2 text-[13px] font-medium tracking-tight">
         <span aria-hidden className="bg-accent size-2 rounded-[2px]" />
         Workfully Screening Bot
-        <span aria-hidden className="text-fg-subtle">
-          ·
-        </span>
-        <span className="font-mono text-[12px]">v0.2.0</span>
+        {version ? (
+          <>
+            <span aria-hidden className="text-fg-subtle">
+              ·
+            </span>
+            <span className="font-mono text-[12px]">v{version}</span>
+          </>
+        ) : null}
       </div>
 
-      <h1
-        className="text-fg leading-none font-semibold tracking-[-0.02em]"
-        style={{ fontSize: "var(--text-page-hero)" }}
-      >
+      <h1 className="text-fg text-[34px] leading-[1.05] font-semibold tracking-[-0.02em] sm:text-[42px] lg:text-[48px] lg:leading-none">
         How I built a finite-state-machine screening bot.
       </h1>
 

@@ -16,11 +16,20 @@ interface CodeBlockProps {
  * defined in DESIGN.md.
  */
 export async function CodeBlock({ code, lang, label }: CodeBlockProps) {
-  const html = await codeToHtml(code, {
-    lang,
-    themes: { light: "github-light", dark: "github-dark" },
-    defaultColor: false,
-  });
+  // Shiki throws on unknown lang or rare parse errors; fall back to a plain
+  // <pre> so a future bad snippet doesn't break the entire /walkthrough build.
+  // The `code` prop must be developer-authored — never user input — because
+  // dangerouslySetInnerHTML below trusts Shiki's escaping.
+  let html: string | null = null;
+  try {
+    html = await codeToHtml(code, {
+      lang,
+      themes: { light: "github-light", dark: "github-dark" },
+      defaultColor: false,
+    });
+  } catch {
+    html = null;
+  }
 
   return (
     <figure className="my-5">
@@ -29,12 +38,16 @@ export async function CodeBlock({ code, lang, label }: CodeBlockProps) {
           {label}
         </figcaption>
       ) : null}
-      <div
-        // The Shiki output is structured HTML. Background + padding overridden
-        // via the `walkthrough-shiki` class in globals.css to match design tokens.
-        className="walkthrough-shiki border-border overflow-x-auto rounded-lg border"
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
+      {html ? (
+        <div
+          className="walkthrough-shiki border-border overflow-x-auto rounded-lg border"
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      ) : (
+        <pre className="bg-muted border-border text-fg overflow-x-auto rounded-lg border p-4 font-mono text-[13px] leading-[1.55]">
+          {code}
+        </pre>
+      )}
     </figure>
   );
 }

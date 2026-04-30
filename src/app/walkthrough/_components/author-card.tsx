@@ -33,7 +33,10 @@ export function AuthorCard({ variant, personalSite }: AuthorCardProps) {
   return null;
 }
 
-export function AuthorFooter({ id }: { id: string }) {
+import { readVersion } from "@/lib/walkthrough/stats";
+
+export async function AuthorFooter({ id }: { id: string }) {
+  const version = await readVersion();
   return (
     <section
       id={id}
@@ -99,7 +102,7 @@ export function AuthorFooter({ id }: { id: string }) {
           </ul>
 
           <p className="text-fg-subtle mt-10 text-[12px]">
-            Workfully Screening Bot v0.2.0 ·{" "}
+            Workfully Screening Bot{version ? ` v${version}` : ""} ·{" "}
             <a
               href="https://github.com/mihaimdm22/workfully-interview"
               target="_blank"

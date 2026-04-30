@@ -15,7 +15,16 @@ interface StickyTocProps {
  * so the active section is the one whose heading just crossed the header.
  */
 export function StickyToc({ sections }: StickyTocProps) {
-  const [activeId, setActiveId] = useState<string>(sections[0]?.id ?? "");
+  // Lazy initializer reads window.location.hash at mount so a deep-link to
+  // #section-id highlights the right entry on first paint instead of the
+  // default before the IntersectionObserver catches up. Falls back to the
+  // first section on SSR (window undefined) and any unmatched hash.
+  const [activeId, setActiveId] = useState<string>(() => {
+    const fallback = sections[0]?.id ?? "";
+    if (typeof window === "undefined") return fallback;
+    const hash = window.location.hash.slice(1);
+    return hash && sections.some((s) => s.id === hash) ? hash : fallback;
+  });
 
   useEffect(() => {
     if (typeof IntersectionObserver === "undefined") return;
