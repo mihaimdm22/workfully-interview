@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { SettingsLauncher } from "@/components/settings/settings-launcher";
+import { getAppSettings } from "@/lib/db/repositories";
 
 interface Crumb {
   label: string;
@@ -14,7 +16,17 @@ interface TopbarProps {
   showSearch?: boolean;
 }
 
-export function Topbar({ crumbs, trailing, showSearch = true }: TopbarProps) {
+export async function Topbar({
+  crumbs,
+  trailing,
+  showSearch = true,
+}: TopbarProps) {
+  // One DB row lookup per page — same row, no fan-out. Settings need to be
+  // available on every page so the gear icon's modal can render with the
+  // user's current values pre-filled. If the read fails, the launcher gets
+  // hardcoded defaults and the modal still works.
+  const initialSettings = await getAppSettings().catch(() => null);
+
   return (
     <header
       data-search={showSearch ? "" : undefined}
@@ -24,6 +36,9 @@ export function Topbar({ crumbs, trailing, showSearch = true }: TopbarProps) {
       {showSearch ? <CommandKInput /> : null}
       <div className="flex items-center justify-end gap-2">
         {trailing}
+        {initialSettings ? (
+          <SettingsLauncher initialSettings={initialSettings} />
+        ) : null}
         <ThemeToggle />
       </div>
     </header>

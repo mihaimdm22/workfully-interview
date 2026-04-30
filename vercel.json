@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "pnpm db:migrate && pnpm build",
   "functions": {
     "src/app/s/[slug]/pdf/download/route.ts": {
       "memory": 1024,

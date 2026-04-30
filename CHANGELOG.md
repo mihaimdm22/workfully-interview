@@ -2,6 +2,22 @@
 
 All notable changes to the Workfully Screening Bot will be documented in this file.
 
+## [0.3.0.0] - 2026-04-30
+
+### Added
+
+- **AI settings modal** behind a topbar gear icon. Picks a model from a server-side allowlist of OpenRouter ids (Haiku 4.5, Sonnet 4.6, Opus 4.7, GPT-5/-mini, Gemini 2.5 Pro/Flash, Llama 4 Maverick), and tunes the FSM evaluation timeout (30–180s), max retries (0–3), and temperature (0.00–1.00) via sliders. Settings persist in a singleton `app_settings` Postgres row (migration `0003_app_settings.sql`, idempotent seed). Modal collapses to a bottom sheet under 640px per DESIGN.md.
+- **OpenRouter live model fetch** in `src/lib/ai/openrouter-models.ts`. Fetches `/api/v1/models` with a 5s timeout, intersects the response with the curated allowlist (so the dropdown only ever offers structured-output-capable models that OpenRouter is currently serving), 1h in-process cache, and falls back to the hardcoded allowlist if the API is down or returns nothing useful. Server-side allowlist guard at the action boundary blocks tampered model ids.
+- **Config resolver** in `src/lib/ai/resolve-config.ts`. One call per dispatch resolves `model`, `timeoutMs`, `maxRetries`, `temperature` with precedence `OPENROUTER_MODEL` env → `app_settings` row → hardcoded defaults. Env override preserves the ops-driven swap promise from ADR 0004; settings-modal changes apply on the next dispatch.
+- **Dynamic FSM timeout.** `EVAL_TIMEOUT_MS` is no longer a static literal in `after`; the machine now declares `delays.evalTimeout` reading `context.evalTimeoutMs`, the orchestrator stamps the resolved value into the persisted snapshot's context before rehydration, and the timeout error message reflects the actual budget. Legacy snapshots without the field fall through to the default at delay-time.
+
+### Changed
+
+- **Default screening model flipped to `anthropic/claude-haiku-4.5`** (was `claude-sonnet-4.6`). On structured output Haiku is 3–5× faster with negligible verdict-quality loss for our schema, so a fresh demo run lands inside the FSM's 60s timeout reliably. Direct cause: the deployed demo at `workfully-interview.vercel.app` was hitting "AI took longer than 60 seconds" on Sonnet under cold-start + slow OpenRouter conditions. `OPENROUTER_MODEL` env still overrides; the settings modal changes the DB-backed default.
+- **`maxRetries` default dropped from 2 → 0.** A single corrective retry on a slow model can eat 30s of the timeout budget on its own; users who want retries can opt back in via the modal.
+- **`fakeScreen` echoes the resolved model id** instead of hardcoding `"fake/local"`. Lets the new E2E spec assert that a settings change propagates end-to-end through the resolver, FSM, and verdict UI.
+- **Vercel deploys now run migrations.** `vercel.json` `buildCommand` is `pnpm db:migrate && pnpm build`. Without this, v0.3.0.0 would deploy with new code that reads `app_settings` against a prod DB that doesn't have the table. The migration is idempotent (`IF NOT EXISTS` + `ON CONFLICT DO NOTHING`) so re-runs across preview + prod deploys are safe. CI already runs migrations before E2E (`.github/workflows/ci.yml`) — this closes the gap on the Vercel side.
+
 ## [0.2.0.0] - 2026-04-29
 
 ### Added

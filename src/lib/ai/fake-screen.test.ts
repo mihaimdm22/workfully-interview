@@ -31,7 +31,9 @@ describe("screen (fake AI branch)", () => {
     });
     expect(out.result.verdict).toBe("strong");
     expect(out.result.score).toBeGreaterThanOrEqual(85);
-    expect(out.model).toBe("fake/local");
+    // Fake mode echoes the resolved model id (default Haiku 4.5) so E2E
+    // and unit assertions can prove the user-selected model flows through.
+    expect(out.model).toBe("anthropic/claude-haiku-4.5");
   });
 
   it("returns weak verdict when CV contains the weak marker", async () => {
@@ -58,6 +60,17 @@ describe("screen (fake AI branch)", () => {
       cv: `${FAKE_VERDICT_MARKERS.weak} ${FAKE_VERDICT_MARKERS.wrongRole}`,
     });
     expect(out.result.verdict).toBe("wrong_role");
+  });
+
+  it("echoes the caller-supplied modelId in fake mode (settings flow-through)", async () => {
+    const out = await screen(
+      {
+        jobDescription: "Senior Backend Engineer",
+        cv: "Elena Kowalski, 6 years TypeScript",
+      },
+      { modelId: "openai/gpt-5" },
+    );
+    expect(out.model).toBe("openai/gpt-5");
   });
 });
 
@@ -106,7 +119,7 @@ describe("screenStreaming (fake AI branch)", () => {
       for (const k of prevKeys) expect(nextKeys.has(k)).toBe(true);
     }
 
-    expect(out.model).toBe("fake/local");
+    expect(out.model).toBe("anthropic/claude-haiku-4.5");
     expect(out.result.verdict).toBe("strong");
   });
 
