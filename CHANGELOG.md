@@ -2,6 +2,14 @@
 
 All notable changes to the Workfully Screening Bot will be documented in this file.
 
+## [0.3.2.2] - 2026-04-30
+
+### Fixed
+
+- **Screening SSE was still dying at 60s — the actual culprit was the edge idle timeout, not `maxDuration`.** v0.3.2.1 declared `maxDuration = 300` on the screening route to fix the same "AI took longer than 120 seconds" symptom; that turned out to be a misdiagnosis. Re-reproduced against prod: server-side close at exactly 60.4s with `curl: (18) Transferred a partial file`, only the `user-message` echo emitted (577 bytes), no `partial`/`done`/`error` events, and no `fsm.transition`/`fsm.dispatch.done` log line for the AI-triggering request — meaning the function was killed mid-`waitFor`. Verified the project's `defaultResourceConfig.functionDefaultTimeout` is already 300s and the locally-built `.vc-config.json` carries `maxDuration: 300`, so the budget was never the constraint. Real cause: Vercel's edge closes streaming responses that go silent for ~60s regardless of the function's `maxDuration`, and the SSE handler had a long silent window between the `user-message` echo (t≈0) and OpenRouter's first streaming chunk. Fix is two-part:
+  - **15s SSE heartbeat in `src/app/api/screening/stream/route.ts`** — `setInterval` enqueues `: ping\n\n` every 15s for the lifetime of the dispatch, cleared in the `finally` block. SSE comments are valid no-ops (any line beginning with `:` is ignored by `EventSource`), so they keep the edge alive without interfering with the typed event protocol the client parses. Also rewrote the stale `maxDuration` comment block at the top of the route to call out that the timeout is necessary but not sufficient and point at the heartbeat.
+  - **Per-call AI timing logs in `src/lib/fsm/orchestrator.ts`** — the screening actor now emits `ai.call.start` (with `model`), `ai.call.first-partial` (with `ms` from start, fired once per dispatch), `ai.call.done` (with `ms` and `firstPartialMs`), and `ai.call.error` (with `ms`, `firstPartialMs`, `err`). Logs flush to stdout immediately so they survive a function kill mid-flight, which means the next failure surfaces actual upstream timing (where the time was spent — actor start vs. first byte vs. completion) instead of a silent 60s gap. Threads a `Logger` parameter through `machineForRequest` and exports the `Logger` interface from `src/lib/log.ts`. Existing `fsm.transition`/`fsm.dispatch.done` logs unchanged. Test suite pass-through (160/160), typecheck/lint/knip all green; no test changes needed because the logger is a noop under `VITEST=true`.
+
 ## [0.3.2.1] - 2026-04-30
 
 ### Fixed

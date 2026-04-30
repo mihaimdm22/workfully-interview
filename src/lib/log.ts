@@ -23,7 +23,7 @@ interface LogFields {
   [k: string]: unknown;
 }
 
-interface Logger {
+export interface Logger {
   info(fields: LogFields): void;
   error(fields: LogFields): void;
 }
