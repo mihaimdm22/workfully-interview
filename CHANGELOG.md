@@ -16,6 +16,7 @@ All notable changes to the Workfully Screening Bot will be documented in this fi
 - **Default screening model flipped to `anthropic/claude-haiku-4.5`** (was `claude-sonnet-4.6`). On structured output Haiku is 3–5× faster with negligible verdict-quality loss for our schema, so a fresh demo run lands inside the FSM's 60s timeout reliably. Direct cause: the deployed demo at `workfully-interview.vercel.app` was hitting "AI took longer than 60 seconds" on Sonnet under cold-start + slow OpenRouter conditions. `OPENROUTER_MODEL` env still overrides; the settings modal changes the DB-backed default.
 - **`maxRetries` default dropped from 2 → 0.** A single corrective retry on a slow model can eat 30s of the timeout budget on its own; users who want retries can opt back in via the modal.
 - **`fakeScreen` echoes the resolved model id** instead of hardcoding `"fake/local"`. Lets the new E2E spec assert that a settings change propagates end-to-end through the resolver, FSM, and verdict UI.
+- **Vercel deploys now run migrations.** `vercel.json` `buildCommand` is `pnpm db:migrate && pnpm build`. Without this, v0.3.0.0 would deploy with new code that reads `app_settings` against a prod DB that doesn't have the table. The migration is idempotent (`IF NOT EXISTS` + `ON CONFLICT DO NOTHING`) so re-runs across preview + prod deploys are safe. CI already runs migrations before E2E (`.github/workflows/ci.yml`) — this closes the gap on the Vercel side.
 
 ## [0.2.0.0] - 2026-04-29
 
