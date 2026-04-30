@@ -33,6 +33,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "knip": "knip",
+    "walkthrough:stats": "tsx scripts/walkthrough-stats.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/lib/db/migrate.ts",
     "db:push": "drizzle-kit push",
@@ -53,6 +54,7 @@
     "puppeteer-core": "^24.42.0",
     "react": "19.2.5",
     "react-dom": "19.2.5",
+    "shiki": "^4.0.2",
     "unpdf": "^1.6.1",
     "xstate": "^5.31.0",
     "zod": "^4.3.6"
