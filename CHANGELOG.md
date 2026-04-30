@@ -2,6 +2,12 @@
 
 All notable changes to the Workfully Screening Bot will be documented in this file.
 
+## [0.3.1.1] - 2026-04-30
+
+### Fixed
+
+- **Screening timeout default raised from 60s to 120s.** The deployed demo at `workfully-interview.vercel.app` was surfacing "AI took longer than 60 seconds. Try again." on cold-start runs, where Vercel function spin-up + OpenRouter routing + Claude Haiku structured-object streaming legitimately landed past 60s and tripped the FSM `after` transition before the model returned. Bumped `DEFAULT_SETTINGS.timeoutMs` and `EVAL_TIMEOUT_MS` from 60_000 → 120_000, both still well inside the 180s slider cap and 300s Vercel function ceiling. New migration `0004_settings_timeout_bump.sql` updates the production `app_settings` singleton from 60000 → 120000 with a `WHERE timeout_ms = 60000` guard so users who already tuned the slider keep their value. The migration runs automatically on every deploy via `pnpm db:migrate && pnpm build`.
+
 ## [0.3.1.0] - 2026-04-30
 
 ### Added
