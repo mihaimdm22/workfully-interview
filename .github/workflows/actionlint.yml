@@ -21,7 +21,7 @@ jobs:
   actionlint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Run actionlint
         # Pin via Docker to avoid a Go toolchain on the runner.
         run: docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:latest -color
