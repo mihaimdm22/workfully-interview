@@ -46,7 +46,7 @@
   "dependencies": {
     "@openrouter/ai-sdk-provider": "^2.9.0",
     "@sparticuz/chromium": "^148.0.0",
-    "ai": "^6.0.168",
+    "ai": "^6.0.216",
     "drizzle-orm": "^0.45.2",
     "nanoid": "^5.1.9",
     "next": "16.2.4",
